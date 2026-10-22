@@ -216,7 +216,8 @@ func setupClaude(home, base, key string, ids []string, dry bool) (string, error)
 	if env == nil {
 		env = map[string]any{}
 	}
-	env["ANTHROPIC_BASE_URL"] = base
+	// Claude Code appends /v1/messages itself, so it takes the bare origin.
+	env["ANTHROPIC_BASE_URL"] = strings.TrimSuffix(base, "/v1")
 	env["ANTHROPIC_AUTH_TOKEN"] = key
 	pins := map[string]string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   pick(ids, []string{"opus"}, []string{"review"}),
@@ -318,10 +319,10 @@ func setupOpenCode(home, base string, ids []string, provider string, dry bool) (
 	path := filepath.Join(root, "opencode", "opencode.jsonc")
 	doc := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil {
-		clean := regexp.MustCompile(`/\*.*?\*/`).ReplaceAll(b, nil)
-		clean = regexp.MustCompile(`(?m)//.*$`).ReplaceAll(clean, nil)
-		clean = regexp.MustCompile(`,(\s*[}\]])`).ReplaceAll(clean, []byte("$1"))
-		_ = json.Unmarshal(clean, &doc)
+		clean := regexp.MustCompile(`,(\s*[}\]])`).ReplaceAll(stripComments(b), []byte("$1"))
+		if err := json.Unmarshal(clean, &doc); err != nil {
+			return "", fmt.Errorf("cannot parse %s, left untouched: %w", path, err)
+		}
 	}
 	providers, _ := doc["providers"].(map[string]any)
 	if providers == nil {
@@ -387,4 +388,48 @@ func truncate(s string, n int) string {
 		return s[:n]
 	}
 	return s
+}
+
+// stripComments removes // and /* */ comments from JSONC, leaving string
+// contents such as "https://..." intact.
+func stripComments(b []byte) []byte {
+	out := make([]byte, 0, len(b))
+	inStr := false
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if inStr {
+			out = append(out, c)
+			if c == '\\' && i+1 < len(b) {
+				i++
+				out = append(out, b[i])
+			} else if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			out = append(out, c)
+			continue
+		}
+		if c == '/' && i+1 < len(b) && b[i+1] == '/' {
+			for i < len(b) && b[i] != '\n' {
+				i++
+			}
+			if i < len(b) {
+				out = append(out, '\n')
+			}
+			continue
+		}
+		if c == '/' && i+1 < len(b) && b[i+1] == '*' {
+			i += 2
+			for i+1 < len(b) && !(b[i] == '*' && b[i+1] == '/') {
+				i++
+			}
+			i++
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
