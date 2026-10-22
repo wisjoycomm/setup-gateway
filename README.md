@@ -53,9 +53,10 @@ What it writes:
 | cursor | `OPENAI_BASE_URL` and `OPENAI_API_KEY` in the environment |
 | agy | skipped |
 
-The API key goes into an environment variable for codex, opencode, and cursor.
-Claude Code only reads its token from `settings.json`, so the key stays in that
-file.
+Claude Code and codex keep the key in their own config file, so they work in
+terminals that were already open. opencode and cursor read it from an
+environment variable; the tool also registers it with the opencode background
+service.
 
 Open a new terminal and run `claude`, `codex`, or `opencode`.
 

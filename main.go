@@ -312,17 +312,14 @@ func setupCodex(home, base, key, model, provider string, dry bool) (string, erro
 	} else {
 		text = line + "\n" + text
 	}
-	envKey := strings.ToUpper(provider) + "_API_KEY"
-	block := fmt.Sprintf("\n[model_providers.%s]\nname = %s\nbase_url = %s\nwire_api = \"responses\"\nenv_key = %s\n",
-		provider, tomlString(provider), tomlString(base), tomlString(envKey))
+	// The key goes in a header rather than env_key: a terminal or Windows
+	// Terminal opened before setup never sees a new user variable, and codex
+	// then fails with "Missing environment variable".
+	block := fmt.Sprintf("\n[model_providers.%s]\nname = %s\nbase_url = %s\nwire_api = \"responses\"\nhttp_headers = { \"Authorization\" = %s }\n",
+		provider, tomlString(provider), tomlString(base), tomlString("Bearer "+key))
 	text = strings.TrimRight(text, "\n") + "\n" + block
 	if err := writeFile(path, text, dry); err != nil {
 		return "", err
-	}
-	if !dry {
-		if err := setEnv(envKey, key); err != nil {
-			return "", err
-		}
 	}
 	return fmt.Sprintf("%s (provider %s, default %s)", path, provider, model), nil
 }
@@ -357,6 +354,9 @@ func setupOpenCode(home, base, key string, ids []string, provider string, dry bo
 	doc := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil {
 		clean := regexp.MustCompile(`,(\s*[}\]])`).ReplaceAll(stripComments(b), []byte("$1"))
+		if len(strings.TrimSpace(string(clean))) == 0 {
+			clean = []byte("{}")
+		}
 		if err := json.Unmarshal(clean, &doc); err != nil {
 			return "", fmt.Errorf("cannot parse %s, left untouched: %w", path, err)
 		}
