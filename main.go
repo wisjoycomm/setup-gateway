@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -76,7 +77,7 @@ func main() {
 		"claude":   func() (string, error) { return setupClaude(home, *base, *key, ids, *dry) },
 		"codex":    func() (string, error) { return setupCodex(home, *base, *key, gpt, *provider, *dry) },
 		"cursor":   func() (string, error) { return setupCursor(*base, *key, gpt, *dry) },
-		"opencode": func() (string, error) { return setupOpenCode(home, *base, ids, *provider, *dry) },
+		"opencode": func() (string, error) { return setupOpenCode(home, *base, *key, ids, *provider, *dry) },
 	}
 	for _, name := range strings.Split(*only, ",") {
 		name = strings.TrimSpace(name)
@@ -119,10 +120,12 @@ func normalize(raw string) string {
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
 	}
-	if !strings.HasSuffix(raw, "/v1") {
-		raw += "/v1"
+	// Cut a pasted endpoint such as /v1/models or /V1/ back to the origin.
+	scheme := strings.Index(raw, "://") + 3
+	if i := strings.Index(strings.ToLower(raw[scheme:]), "/v1"); i >= 0 {
+		raw = raw[:scheme+i]
 	}
-	return raw
+	return strings.TrimRight(raw, "/") + "/v1"
 }
 
 func fetchModels(base, key string) ([]string, error) {
@@ -345,7 +348,7 @@ func setupCursor(base, key, model string, dry bool) (string, error) {
 
 // --- opencode -------------------------------------------------------------
 
-func setupOpenCode(home, base string, ids []string, provider string, dry bool) (string, error) {
+func setupOpenCode(home, base, key string, ids []string, provider string, dry bool) (string, error) {
 	root := os.Getenv("XDG_CONFIG_HOME")
 	if root == "" {
 		root = filepath.Join(home, ".config")
@@ -382,7 +385,26 @@ func setupOpenCode(home, base string, ids []string, provider string, dry bool) (
 	if err := writeFile(path, string(out)+"\n", dry); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s (%d models as %s/<id>)", path, len(ids), provider), nil
+	note := ""
+	if !dry {
+		note = registerOpenCodeKey(strings.ToUpper(provider)+"_API_KEY", key)
+	}
+	return fmt.Sprintf("%s (%d models as %s/<id>)%s", path, len(ids), provider, note), nil
+}
+
+// registerOpenCodeKey hands the key to the opencode background service. The
+// service runs with its own environment, so a new user variable is not seen
+// until it is registered there and the service restarts.
+func registerOpenCodeKey(name, key string) string {
+	bin, err := exec.LookPath("opencode")
+	if err != nil {
+		return ""
+	}
+	if err := exec.Command(bin, "service", "set", "env", name, key).Run(); err != nil {
+		return "\n    could not register " + name + " with the opencode service: " + err.Error()
+	}
+	_ = exec.Command(bin, "service", "restart").Run()
+	return "\n    " + name + " registered with the opencode service"
 }
 
 func readJSON(path string) map[string]any {
