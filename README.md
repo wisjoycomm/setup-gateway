@@ -65,7 +65,7 @@ Open a new terminal and run `claude`, `codex`, or `opencode`.
 setup-gateway                       ask for the domain and key
 setup-gateway -dry-run              show what would change, write nothing
 setup-gateway -only claude,codex    limit to some CLIs
-setup-gateway -provider-id adnx     provider name used by codex and opencode
+setup-gateway -provider-id mygw     provider name used by codex and opencode
 setup-gateway -base-url URL -key K  skip the prompts
 ```
 
