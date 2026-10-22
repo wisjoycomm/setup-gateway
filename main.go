@@ -68,10 +68,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	gpt := ""
+	if strings.Contains(*only, "codex") || strings.Contains(*only, "cursor") {
+		gpt = pickWorking(*base, *key, ids)
+	}
 	targets := map[string]func() (string, error){
 		"claude":   func() (string, error) { return setupClaude(home, *base, *key, ids, *dry) },
-		"codex":    func() (string, error) { return setupCodex(home, *base, *key, ids, *provider, *dry) },
-		"cursor":   func() (string, error) { return setupCursor(*base, *key, ids, *dry) },
+		"codex":    func() (string, error) { return setupCodex(home, *base, *key, gpt, *provider, *dry) },
+		"cursor":   func() (string, error) { return setupCursor(*base, *key, gpt, *dry) },
 		"opencode": func() (string, error) { return setupOpenCode(home, *base, ids, *provider, *dry) },
 	}
 	for _, name := range strings.Split(*only, ",") {
@@ -182,6 +186,44 @@ func pick(ids []string, needles []string, exclude []string) string {
 	return ""
 }
 
+// pickWorking returns the first GPT model that answers a one-word request.
+// A gateway can list models its upstream account cannot serve, so listing
+// alone is not enough to suggest a default.
+func pickWorking(base, key string, ids []string) string {
+	var candidates []string
+	for _, id := range ids {
+		low := strings.ToLower(id)
+		if strings.Contains(low, "gpt") && !strings.Contains(low, "review") && !strings.Contains(low, "[") {
+			candidates = append(candidates, id)
+		}
+	}
+	client := &http.Client{Timeout: 45 * time.Second}
+	for i, id := range candidates {
+		if i == 6 {
+			break
+		}
+		body, _ := json.Marshal(map[string]any{"model": id, "input": "hi"})
+		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/responses", strings.NewReader(string(body)))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		res.Body.Close()
+		if res.StatusCode == http.StatusOK {
+			return id
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return ids[0]
+}
+
 func backup(path string) {
 	if _, err := os.Stat(path); err == nil {
 		_ = copyFile(path, path+".bak")
@@ -253,7 +295,7 @@ func setupClaude(home, base, key string, ids []string, dry bool) (string, error)
 
 // --- codex ----------------------------------------------------------------
 
-func setupCodex(home, base, key string, ids []string, provider string, dry bool) (string, error) {
+func setupCodex(home, base, key, model, provider string, dry bool) (string, error) {
 	path := filepath.Join(home, ".codex", "config.toml")
 	text := ""
 	if b, err := os.ReadFile(path); err == nil {
@@ -261,10 +303,6 @@ func setupCodex(home, base, key string, ids []string, provider string, dry bool)
 	}
 	re := regexp.MustCompile(`(?ms)^\[model_providers\.` + regexp.QuoteMeta(provider) + `\][^\[]*`)
 	text = re.ReplaceAllString(text, "")
-	model := pick(ids, []string{"gpt"}, []string{"review"})
-	if model == "" {
-		model = ids[0]
-	}
 	line := "model_provider = " + tomlString(provider)
 	if regexp.MustCompile(`(?m)^model_provider\s*=`).MatchString(text) {
 		text = regexp.MustCompile(`(?m)^model_provider\s*=.*$`).ReplaceAllString(text, line)
@@ -292,11 +330,7 @@ func tomlString(v string) string {
 
 // --- cursor ---------------------------------------------------------------
 
-func setupCursor(base, key string, ids []string, dry bool) (string, error) {
-	model := pick(ids, []string{"gpt"}, []string{"review"})
-	if model == "" {
-		model = ids[0]
-	}
+func setupCursor(base, key, model string, dry bool) (string, error) {
 	if dry {
 		return fmt.Sprintf("env OPENAI_BASE_URL, OPENAI_API_KEY (model %s)", model), nil
 	}
