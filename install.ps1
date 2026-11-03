@@ -1,12 +1,14 @@
 param(
     [string]$Version = "latest",
-    [switch]$RunSetup
+    [switch]$RunSetup,
+    [string]$InstallDir = "",
+    [switch]$NoPath
 )
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $repo = "wisjoycomm/setup-gateway"
-$dir = Join-Path $env:USERPROFILE ".local\bin"
+$dir = if ($InstallDir) { [IO.Path]::GetFullPath($InstallDir) } else { Join-Path $env:USERPROFILE ".local\bin" }
 $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $asset = switch ($arch) {
     "AMD64" { "setup-gateway.exe" }
@@ -42,11 +44,35 @@ try {
 } finally {
     if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
 }
-$userPath = [string][Environment]::GetEnvironmentVariable("Path", "User")
-if (($userPath -split ';') -notcontains $dir) {
-    [Environment]::SetEnvironmentVariable("Path", (($userPath.TrimEnd(';') + ";" + $dir).TrimStart(';')), "User")
+if (-not $NoPath) {
+    $userPath = [string][Environment]::GetEnvironmentVariable("Path", "User")
+    if (($userPath -split ';') -notcontains $dir) {
+        [Environment]::SetEnvironmentVariable("Path", (($userPath.TrimEnd(';') + ";" + $dir).TrimStart(';')), "User")
+        # Notify Explorer so terminals opened from Start inherit the new PATH.
+        try {
+            if (-not ('Wisjoy.EnvironmentNotification' -as [type])) {
+                Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Wisjoy {
+    public static class EnvironmentNotification {
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr SendMessageTimeout(IntPtr window, uint message,
+            UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+    }
 }
-if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$dir;$env:Path" }
+'@
+            }
+            $notificationResult = [UIntPtr]::Zero
+            [Wisjoy.EnvironmentNotification]::SendMessageTimeout([IntPtr]0xffff, 0x001a,
+                [UIntPtr]::Zero, 'Environment', 2, 1000, [ref]$notificationResult) | Out-Null
+        } catch { Write-Host 'PATH saved. Restart your terminal application if the command is not found.' }
+    }
+    if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$dir;$env:Path" }
+}
 Write-Host "Installed $($release.tag_name): $dest (SHA-256 verified)"
 Write-Host "Run setup-gateway to choose OAuth token, API key, custom gateway, or browser login."
-if ($RunSetup) { & $dest }
+if ($RunSetup) {
+    & $dest
+    if ($LASTEXITCODE -ne 0) { throw "Setup exited with code $LASTEXITCODE. Run the installed tool again to retry." }
+}

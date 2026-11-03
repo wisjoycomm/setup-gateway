@@ -36,3 +36,7 @@ jobs:
             [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count) { $errors | Format-List; exit 1 }
           }
+      - name: Test Windows installer without network or PATH changes
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/install-tests.ps1
