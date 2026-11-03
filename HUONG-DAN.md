@@ -1,6 +1,6 @@
 # Huong dan cai may moi - Wisjoy setup-gateway
 
-Mot tool CLI gom bo `Bo_cong_cu` va phan cau hinh Claude/gateway.
+Mot tool CLI gom bo `Bo_cong_cu`, Claude, Codex, OpenCode, Cursor, Antigravity va Orca.
 Ban tai mot file executable, khong can cai Go hay Node de mo tool.
 
 ## 1. Cach de nhat tren Windows
@@ -28,18 +28,113 @@ Neu chi co source Git, xem muc Build o cuoi file nay.
 Menu:
 
 ```text
-1. Cai dat may moi (cong cu + Claude)
-2. Ket noi Claude: OAuth / API key / gateway / login
+1. Cai dat may moi (chon ung dung + cong cu)
+2. Cau hinh / dang nhap tung ung dung
 3. Cai bo cong cu dong lenh
 4. Cai quan ly cua so
 5. Go bo cong cu dong lenh
 6. Go quan ly cua so
 7. Xem / chon profile Claude da luu
+8. Trang thai ung dung (offline)
+9. Cai ung dung con thieu
+10. Cap nhat ung dung
+11. Cap nhat setup-gateway
 0. Thoat
 ```
 
 Che do may moi hoi tung phan. Khong can cai het. Phan quan ly cua so la tuy chon.
 Khi cai package, Windows co the hien UAC; Homebrew/Linux co the hoi mat khau sudo.
+Menu quay lai sau moi thao tac, ke ca khi gap loi; nhan 0 de thoat.
+
+### Cai mot lan, dung lai tai may
+
+Sau lan cai dau, chi can go `setup-gateway`. Khong clone Git, khong tai lai
+source va khong tu check update khi mo menu. Lenh `apps list` va `version`
+cung hoat dong offline. Chi tai khi ban chon cai/cap nhat; dang nhap va
+kiem tra gateway van can mang. Tung app co the co auto-update rieng.
+
+```text
+setup-gateway apps list
+setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca
+setup-gateway apps install all -dry-run
+setup-gateway apps update codex,orca
+setup-gateway update
+setup-gateway version
+```
+
+`apps install` bo qua app da phat hien tren may. `apps update` moi yeu cau cap nhat.
+`update` chi cap nhat tool setup-gateway, sau do mo lai tool.
+Neu dang dung v1.1.0, chay lai lenh CMD o dau huong dan mot lan de len v1.2.0;
+tu ban nay tro di co lenh update tich hop.
+
+| ID | Windows | macOS / Linux |
+| --- | --- | --- |
+| claude | Installer chinh thuc | Installer chinh thuc |
+| codex | Installer chinh thuc | Installer chinh thuc |
+| opencode | WinGet SST.opencode | Installer chinh thuc |
+| cursor-agent | Cursor CLI chinh thuc | Cursor CLI chinh thuc |
+| cursor | WinGet Anysphere.Cursor | macOS: Homebrew; Linux: tai tu cursor.com/downloads |
+| antigravity (hoac agy) | CLI chinh thuc | CLI chinh thuc |
+| antigravity-ide | WinGet Google.AntigravityIDE | macOS: Homebrew; Linux: antigravity.google/download |
+| orca | Installer tu stablyai/orca | macOS: ~/Applications/Orca.app; Linux: ~/.local/bin/orca-ide |
+
+Windows can App Installer/WinGet cho cac goi WinGet. macOS can Homebrew cho
+ung dung cask. Wizard cho cai bo cong cu truoc de bo sung cac tien ich can thiet.
+Linux: `all` van cai cac app ho tro, nhung bao loi rieng cho hai IDE can tai tay.
+Orca AppImage can FUSE; neu thieu, thu `orca-ide --appimage-extract-and-run`.
+
+Orca lay tu upstream chinh thuc `stablyai/orca`; fork `wisjoycomm/orca` chua co
+release bo cai. File release Orca/setup-gateway duoc kiem tra SHA-256 va cache
+trong thu muc user-cache cua he dieu hanh, muc `setup-gateway/downloads`.
+Thu lai se dung file cache neu hash dung. Installer cac hang/WinGet/Homebrew
+tu quan ly download/cache cua chung. Ban bootstrap Windows cung khong tai lai
+binary neu may da co dung hash cua release.
+
+### Dang nhap theo tung ung dung
+
+```text
+setup-gateway configure claude
+setup-gateway configure codex
+setup-gateway configure opencode
+setup-gateway configure cursor
+setup-gateway configure orca
+```
+
+Claude van co OAuth `sk-ant-oat`, API key, gateway, login. Token Claude khong
+dung thay API key cua Codex/OpenCode. Codex co cac cach sau:
+
+```text
+setup-gateway configure codex -auth login
+setup-gateway configure codex -auth login -device-auth
+setup-gateway configure codex -auth api-key
+setup-gateway configure codex -auth gateway -base-url https://example.com -models MODEL_THAT
+```
+
+Nhap key o prompt an. API key OpenAI di vao `codex login --with-api-key` qua stdin.
+Gateway Codex phai ho tro `/v1/responses`; thay `MODEL_THAT` bang ID gateway cap.
+Chuyen login se bo lua chon model/provider cu trong config user, giu project/MCP
+va cau hinh khac. File TOML duoc backup, comment/dinh dang co the thay doi.
+Bien OPENAI_BASE_URL con trong terminal hoac cau hinh project/managed van co the
+anh huong khi ban tu mo Codex ben ngoai tool.
+
+OpenCode:
+
+```text
+setup-gateway configure opencode -auth login
+setup-gateway configure opencode -auth api-key -provider-id openai
+setup-gateway configure opencode -auth api-key -provider-id anthropic
+setup-gateway configure opencode -auth gateway -base-url https://example.com -models MODEL_THAT
+```
+
+Neu gateway khong co `/v1/models`, them `-skip-check -models MODEL_THAT`.
+OpenCode dung schema `provider/options/npm` hien tai; giu cau hinh JSON/JSONC
+khac va backup file duoc sua. Sau login, dung `/models` de chon provider muon dung.
+Gateway cu van duoc giu lai trong danh sach.
+
+Cursor/Antigravity dang nhap bang UI/CLI cua chinh ung dung; muc configure hien
+huong dan. Cursor gateway vao Settings > Models neu tinh nang do ho tro, tool
+khong ghi bien OPENAI_* toan may. Orca: mo app, them thu muc project, chon Claude
+hoac Codex da cai/cau hinh; khong co key gateway dung chung rieng cho Orca.
 
 ## 2. Cai lenh vao PATH
 
@@ -56,7 +151,7 @@ Lenh tren tai ban **release da phat hanh**, khong tu build source tren nhanh Git
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.sh | sh
+curl -fsSL https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.sh | sh
 ~/.local/bin/setup-gateway
 ```
 

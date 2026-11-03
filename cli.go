@@ -58,8 +58,8 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 	if *profile != "" && !validName(*profile) {
 		return errors.New("invalid profile name; use letters, numbers, underscore or hyphen")
 	}
-	reader := bufio.NewReader(input)
-	wizard := len(args) == 0
+	reader := bufio.NewReader(&oneByteReader{input})
+	wizard := len(args) == 0 || len(args) == 2 && args[0] == "-only" && args[1] == "claude"
 	var p connectionProfile
 	if *use != "" {
 		if *auth != "" || *base != "" || *key != "" || *keyStdin || *profile != "" || *models != "" {

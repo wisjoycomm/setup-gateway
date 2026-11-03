@@ -5,7 +5,7 @@ $processPathBefore = $env:Path
 $userPathBefore = [Environment]::GetEnvironmentVariable('Path', 'User')
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {
-    foreach ($testCase in @('digest', 'checksums', 'mismatch', 'missing-checksum')) {
+    foreach ($testCase in @('digest', 'checksums', 'reuse', 'mismatch', 'missing-checksum')) {
         & {
             param($testCase, $installer, $testRoot)
             $caseDir = Join-Path $testRoot $testCase
@@ -18,16 +18,20 @@ try {
             $assetName = if ($arch -eq 'ARM64') { 'setup-gateway-windows-arm64.exe' } else { 'setup-gateway.exe' }
             $dest = Join-Path $caseDir 'setup-gateway.exe'
             [IO.File]::WriteAllText($dest, 'previous installation')
+            if ($testCase -eq 'reuse') { [IO.File]::WriteAllBytes($dest, $payload) }
             function Invoke-RestMethod {
                 param($Uri, $Headers)
-                $digest = if ($testCase -eq 'digest') { "sha256:$expectedHash" } elseif ($testCase -eq 'mismatch') { 'sha256:' + ('0' * 64) } else { $null }
+                $digest = if ($testCase -in @('digest','reuse')) { "sha256:$expectedHash" } elseif ($testCase -eq 'mismatch') { 'sha256:' + ('0' * 64) } else { $null }
                 $assets = @([pscustomobject]@{ name=$assetName; browser_download_url='https://example.invalid/binary'; digest=$digest })
                 if ($testCase -eq 'checksums') { $assets += [pscustomobject]@{ name='checksums.txt'; browser_download_url='https://example.invalid/checksums' } }
                 return [pscustomobject]@{ tag_name='v-test'; assets=$assets }
             }
             function Invoke-WebRequest {
                 param($Uri, $OutFile, [switch]$UseBasicParsing)
-                if ($Uri -eq 'https://example.invalid/binary') { [IO.File]::WriteAllBytes($OutFile, $payload); return }
+                if ($Uri -eq 'https://example.invalid/binary') {
+                    if ($testCase -eq 'reuse') { throw 'Downloaded an already installed release' }
+                    [IO.File]::WriteAllBytes($OutFile, $payload); return
+                }
                 if ($Uri -eq 'https://example.invalid/checksums') { return [pscustomobject]@{ Content="$expectedHash  $assetName`n" } }
                 throw 'Unexpected network request in test'
             }

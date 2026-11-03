@@ -21,6 +21,15 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 		return mainMenu(input, out)
 	}
 	switch args[0] {
+	case "apps", "status":
+		return newAppManager().run(args[1:], input, out)
+	case "configure":
+		return configureClient(args[1:], input, out)
+	case "update":
+		return updateSelf(args[1:], out)
+	case "version", "--version", "-version":
+		fmt.Fprintln(out, "setup-gateway", strings.TrimSpace(buildVersion))
+		return nil
 	case "auth":
 		return runCLI(args[1:], input, out)
 	case "tools":
@@ -31,6 +40,7 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 		}
 		return onboard(input, out)
 	case "help", "-h", "--help", "-help":
+		fmt.Fprintln(out, "App management:\n  setup-gateway apps list                    local installation status\n  setup-gateway apps install claude,codex,orca\n  setup-gateway apps install all -dry-run\n  setup-gateway apps update codex,orca        explicit app updates\n  setup-gateway configure codex              client-specific login/gateway\n  setup-gateway configure opencode\n  setup-gateway update                       update this CLI\n  setup-gateway version                      local version")
 		fmt.Fprintln(out, "Wisjoy setup-gateway: one CLI for a new development machine\n\n  setup-gateway                         interactive menu\n  setup-gateway onboard                 new-machine wizard\n  setup-gateway auth                    choose a Claude authentication method\n  setup-gateway tools list              show bundled tool groups\n  setup-gateway tools install cli       terminal, utilities, runtimes, coding agents\n  setup-gateway tools install wm        Komorebi / AeroSpace / i3 / Hyprland\n  setup-gateway tools uninstall cli     remove shell integration and selected apps\n  setup-gateway tools uninstall wm      remove window-manager setup\n  setup-gateway tools install cli -groups 1,2,4 -dry-run\n  setup-gateway -use-profile work -run  activate a Claude connection and launch\n\nAuthentication options (also accepted without the auth subcommand):")
 		return runCLI([]string{"-help"}, input, out)
 	default:
@@ -59,34 +69,63 @@ func menuAnswer(input io.Reader, out io.Writer, label string) string {
 }
 
 func mainMenu(input io.Reader, out io.Writer) error {
-	fmt.Fprintln(out, "Wisjoy - Cai dat may moi\n  1. Cai dat may moi (cong cu + Claude)\n  2. Ket noi Claude: OAuth / API key / gateway / login\n  3. Cai bo cong cu dong lenh\n  4. Cai quan ly cua so\n  5. Go bo cong cu dong lenh\n  6. Go quan ly cua so\n  7. Xem / chon profile Claude da luu\n  0. Thoat")
-	switch menuAnswer(input, out, "Chon [0-7]") {
-	case "", "0":
-		return nil
-	case "1":
-		return onboard(input, out)
-	case "2":
-		return runCLI(nil, input, out)
-	case "3":
-		return runToolkit([]string{"install", "cli"}, input, out)
-	case "4":
-		return runToolkit([]string{"install", "wm"}, input, out)
-	case "5":
-		return runToolkit([]string{"uninstall", "cli"}, input, out)
-	case "6":
-		return runToolkit([]string{"uninstall", "wm"}, input, out)
-	case "7":
-		if err := runCLI([]string{"-list-profiles"}, input, out); err != nil {
-			return err
-		}
-		name := menuAnswer(input, out, "Profile de kich hoat (Enter = bo qua)")
-		if name == "" {
+	for {
+		fmt.Fprintf(out, "\nWisjoy setup-gateway %s - Chay tai may\n  1. Cai dat may moi (chon ung dung + cong cu)\n  2. Cau hinh / dang nhap tung ung dung\n  3. Cai bo cong cu dong lenh\n  4. Cai quan ly cua so\n  5. Go bo cong cu dong lenh\n  6. Go quan ly cua so\n  7. Xem / chon profile Claude\n  8. Trang thai ung dung (offline)\n  9. Cai ung dung con thieu\n  10. Cap nhat ung dung\n  11. Cap nhat setup-gateway\n  0. Thoat\n", strings.TrimSpace(buildVersion))
+		var err error
+		switch menuAnswer(input, out, "Chon [0-11]") {
+		case "", "0":
 			return nil
+		case "1":
+			err = onboard(input, out)
+		case "2":
+			err = configureClient(nil, input, out)
+		case "3":
+			err = runToolkit([]string{"install", "cli"}, input, out)
+		case "4":
+			err = runToolkit([]string{"install", "wm"}, input, out)
+		case "5":
+			err = runToolkit([]string{"uninstall", "cli"}, input, out)
+		case "6":
+			err = runToolkit([]string{"uninstall", "wm"}, input, out)
+		case "7":
+			err = runCLI([]string{"-list-profiles"}, input, out)
+			if err != nil {
+				break
+			}
+			name := menuAnswer(input, out, "Profile de kich hoat (Enter = bo qua)")
+			if name == "" {
+				break
+			}
+			err = runCLI([]string{"-use-profile", name}, input, out)
+		case "8":
+			err = newAppManager().run(nil, input, out)
+		case "9":
+			err = appMenu("install", input, out)
+		case "10":
+			err = appMenu("update", input, out)
+		case "11":
+			if strings.EqualFold(menuAnswer(input, out, "Tai ban moi setup-gateway? [y/N]"), "y") {
+				err = updateSelf(nil, out)
+			}
+		default:
+			fmt.Fprintln(out, "Chon mot muc tu 0 den 11.")
 		}
-		return runCLI([]string{"-use-profile", name}, input, out)
-	default:
-		return errors.New("choose a menu item from 0 to 7")
+		if err != nil {
+			fmt.Fprintln(out, "Loi:", err)
+		}
 	}
+}
+
+func appMenu(action string, input io.Reader, out io.Writer) error {
+	m := newAppManager()
+	if err := m.run(nil, input, out); err != nil {
+		return err
+	}
+	ids := menuAnswer(input, out, "Ung dung (ID cach nhau boi dau phay; all = tat ca; Enter = quay lai)")
+	if ids == "" {
+		return nil
+	}
+	return m.run([]string{action, ids}, input, out)
 }
 
 func onboard(input io.Reader, out io.Writer) error {
@@ -96,15 +135,22 @@ func onboard(input io.Reader, out io.Writer) error {
 			return err
 		}
 	}
+	if err := appMenu("install", input, out); err != nil {
+		fmt.Fprintln(out, "Some apps did not install:", err)
+	}
 	if strings.EqualFold(menuAnswer(input, out, "Install/configure window manager? [y/N]"), "y") {
 		if err := runToolkit([]string{"install", "wm"}, input, out); err != nil {
 			return err
 		}
 	}
-	if strings.EqualFold(menuAnswer(input, out, "Configure Claude authentication? [Y/n]"), "n") {
-		return nil
+	for {
+		if !strings.EqualFold(menuAnswer(input, out, "Configure/login an application? [y/N]"), "y") {
+			return nil
+		}
+		if err := configureClient(nil, input, out); err != nil {
+			fmt.Fprintln(out, "Configuration:", err)
+		}
 	}
-	return runCLI(nil, input, out)
 }
 
 func toolkitScript(platform, action, module string) (string, error) {
@@ -215,6 +261,7 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %s did not complete; review package results above: %w", action, module, err)
 	}
+	refreshProcessPath()
 	fmt.Fprintln(out, "Toolkit action completed. Open a new terminal for PATH/profile changes.")
 	return nil
 }

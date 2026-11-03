@@ -1,7 +1,7 @@
 # Wisjoy setup-gateway
 
 One standalone CLI for setting up a development machine: the original
-**Bo_cong_cu** toolkit plus Claude authentication and custom API gateways.
+**Bo_cong_cu** toolkit plus Claude, Codex, OpenCode, Cursor, Antigravity and Orca.
 Windows, macOS and Linux builds embed all toolkit scripts. No Go or Node.js is
 needed to run the downloaded executable.
 
@@ -25,13 +25,23 @@ For an offline transfer of the CLI itself:
 Download and extract `setup-gateway-windows-amd64.zip` from GitHub Releases, then
 double-click **Run-Setup.cmd**. The menu offers:
 
-1. New-machine setup: choose tools, optional window manager, then Claude auth.
-2. Claude authentication only.
+1. New-machine setup: select applications, tools, optional window manager and client logins.
+2. Configure/login a selected application.
 3. Install command-line tools.
 4. Install/configure a window manager.
 5. Uninstall command-line tools.
 6. Uninstall window-manager setup.
 7. List and activate saved Claude connection profiles.
+8. Inspect installed applications locally.
+9. Install missing applications.
+10. Update applications explicitly.
+11. Update setup-gateway itself.
+
+The menu returns after each operation (including an error); choose `0` to exit.
+Opening it, listing applications and reading the version make no network requests.
+The executable and toolkit scripts remain on your machine. You do not clone or
+download the repository again for normal use. Installation skips detected apps;
+updating them is a separate action. Applications may have their own auto-updaters.
 
 The menu asks before starting a toolkit module. Package installers can request
 administrator privileges. Docker and removal of an existing GlazeWM installation
@@ -51,7 +61,7 @@ and makes the command available in the current and future terminals.
 macOS / Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.sh | sh
+curl -fsSL https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.sh | sh
 ~/.local/bin/setup-gateway
 ```
 
@@ -61,6 +71,106 @@ For a source checkout that has not been released yet, use the local build below;
 the public install commands fetch the latest **published** binary, not local changes.
 
 ## Bundled tools
+
+### Applications and updates
+
+```text
+setup-gateway apps list
+setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca
+setup-gateway apps install all -dry-run
+setup-gateway apps update codex,orca
+setup-gateway version
+setup-gateway update
+```
+
+| App ID | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| `claude` | Official native installer | Official installer | Official installer |
+| `codex` | Official native installer | Official installer | Official installer |
+| `opencode` | WinGet `SST.opencode` | Official installer | Official installer |
+| `cursor-agent` | Official Cursor CLI installer | Official installer | Official installer |
+| `cursor` | WinGet `Anysphere.Cursor` | Homebrew cask | Manual vendor download |
+| `antigravity` (alias `agy`) | Official CLI installer | Official installer | Official installer |
+| `antigravity-ide` | WinGet `Google.AntigravityIDE` | Homebrew cask | Manual vendor download |
+| `orca` | Official upstream NSIS installer | Upstream ZIP to `~/Applications/Orca.app` | Upstream AppImage to `~/.local/bin/orca-ide` |
+
+Use `apps install all` to select every entry. On Linux, the two manual desktop
+installers report unsupported and the remaining selections still run. Native
+Windows needs WinGet/App Installer for the listed WinGet packages; macOS needs
+Homebrew for casks. The developer-toolkit module can install prerequisites.
+For manual Linux desktop downloads: [Cursor](https://cursor.com/downloads) and
+[Antigravity IDE](https://antigravity.google/download).
+
+Orca comes from [stablyai/orca](https://github.com/stablyai/orca/releases), the
+upstream referenced by the installed Orca updater. The `wisjoycomm/orca` fork
+does not currently publish installers. Orca and setup-gateway release assets
+are SHA-256 verified and cached under the OS user-cache directory in
+`setup-gateway/downloads`. Retrying reuses verified cached assets. Upstream
+script installers and package managers manage their own downloads/caches.
+Orca's Linux AppImage needs FUSE, or use `orca-ide --appimage-extract-and-run`.
+
+`setup-gateway update` replaces this executable after checksum verification;
+restart the command to use it. A running Windows image can leave an adjacent
+`.old-<timestamp>` file, removable after the previous process exits. The
+Windows bootstrap also reuses an already installed executable with the same hash.
+
+### Per-client authentication
+
+```text
+setup-gateway configure claude
+setup-gateway configure codex
+setup-gateway configure opencode
+setup-gateway configure cursor
+setup-gateway configure orca
+```
+
+Claude retains all four methods described below. Codex supports normal ChatGPT
+login, device-code login, direct OpenAI API keys, and Responses-compatible gateways:
+
+```text
+setup-gateway configure codex -auth login
+setup-gateway configure codex -auth login -device-auth
+setup-gateway configure codex -auth api-key
+setup-gateway configure codex -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
+```
+
+Keys use a hidden prompt, `-key-stdin` or `SETUP_GATEWAY_KEY`. Codex direct API
+keys go through `codex login --with-api-key` on stdin. Gateway settings respect
+`CODEX_HOME`, set the selected default model, and use the Responses API.
+Switching to normal login clears user-level provider/model/forced-login overrides;
+projects, MCP servers and other settings are retained. Existing named providers
+remain available. TOML comments/formatting can change; the original is backed up.
+Old shell `OPENAI_BASE_URL` values can still affect ordinary launches outside this
+tool; project/managed settings also take precedence where applicable.
+
+OpenCode supports its normal provider login flow, direct OpenAI/Anthropic API
+keys, and OpenAI-compatible gateways:
+
+```text
+setup-gateway configure opencode -auth login
+setup-gateway configure opencode -auth api-key -provider-id openai
+setup-gateway configure opencode -auth api-key -provider-id anthropic
+setup-gateway configure opencode -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
+```
+
+OpenCode uses the current `provider`, `npm` and `options` schema, merges existing
+JSON/JSONC settings and backs up the edited file. With normal login, use `/models`
+in OpenCode to choose the account/provider; existing gateway entries remain.
+Use `-skip-check -models YOUR_MODEL_ID` if a gateway has no `/v1/models` route.
+Model discovery does not prove that generation endpoints are compatible.
+
+Cursor/Antigravity account sign-in happens in their own UI/CLI. `configure` shows
+the relevant steps; it does not import Claude tokens or invent unsupported
+gateway settings. Orca uses the separately configured agents: open Orca, add a
+project folder and select the desired installed agent.
+
+Official references: [Codex installation](https://developers.openai.com/codex/cli),
+[Codex authentication](https://developers.openai.com/codex/auth),
+[OpenCode providers](https://opencode.ai/docs/providers/),
+[Cursor CLI installation](https://cursor.com/docs/cli/installation),
+[Antigravity downloads](https://antigravity.google/download).
+
+### Original Bo_cong_cu modules
 
 ```text
 setup-gateway
@@ -209,15 +319,17 @@ setup-gateway -base-url https://example.com -provider-id mygw
 
 The second command defaults to the original client list. In the interactive menu,
 Claude alone is the default; you can select all clients for gateway setup.
-OAuth, direct Anthropic API-key, browser login and named profiles are Claude-only.
+In this legacy `auth` command, OAuth, direct Anthropic API-key, browser login
+and named profiles are Claude-only. Use `configure codex` or `configure opencode`
+for their own authentication methods.
 Antigravity CLI has no supported custom endpoint and is reported as skipped.
 
 | Client | Configuration |
 | --- | --- |
 | Claude | `~/.claude/settings.json`; model aliases discovered from gateway |
 | Codex | `~/.codex/config.toml`; gateway Responses API provider and credential |
-| OpenCode | `~/.config/opencode/opencode.jsonc`; gateway models and service credential registration |
-| Cursor | `OPENAI_BASE_URL` and `OPENAI_API_KEY` for future terminals |
+| OpenCode | `~/.config/opencode/opencode.json` or existing `.jsonc`; provider options and models |
+| Cursor | Manual instructions for Settings > Models; no global environment writes |
 
 ## Preview, credentials and backups
 

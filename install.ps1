@@ -27,8 +27,13 @@ if ($binary.Count -ne 1) { throw "Release $($release.tag_name) has no $asset bui
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $dest = Join-Path $dir "setup-gateway.exe"
 $download = Join-Path $dir (".setup-gateway-" + [guid]::NewGuid().ToString("N") + ".tmp")
+function Get-InstallerHash([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-', '') }
+    finally { $hasher.Dispose(); $stream.Dispose() }
+}
 try {
-    Invoke-WebRequest -UseBasicParsing -Uri $binary[0].browser_download_url -OutFile $download
     $expected = ""
     if ($binary[0].digest -match '^sha256:([a-fA-F0-9]{64})$') {
         $expected = $Matches[1]
@@ -39,12 +44,13 @@ try {
         }
     }
     if (-not $expected) { throw "Release has no SHA-256 for $asset; installation stopped." }
-    $hashStream = [IO.File]::OpenRead($download)
-    $hasher = [Security.Cryptography.SHA256]::Create()
-    try { $actual = ([BitConverter]::ToString($hasher.ComputeHash($hashStream))).Replace('-', '') }
-    finally { $hasher.Dispose(); $hashStream.Dispose() }
-    if ($actual -ne $expected) { throw "SHA-256 mismatch; existing installation was not replaced." }
-    Move-Item -LiteralPath $download -Destination $dest -Force
+    if ((Test-Path -LiteralPath $dest) -and (Get-InstallerHash $dest) -eq $expected) {
+        Write-Host 'This release is already installed. Reusing the local executable.'
+    } else {
+        Invoke-WebRequest -UseBasicParsing -Uri $binary[0].browser_download_url -OutFile $download
+        if ((Get-InstallerHash $download) -ne $expected) { throw "SHA-256 mismatch; existing installation was not replaced." }
+        Move-Item -LiteralPath $download -Destination $dest -Force
+    }
 } finally {
     if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
 }
@@ -75,7 +81,7 @@ namespace Wisjoy {
     if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$dir;$env:Path" }
 }
 Write-Host "Installed $($release.tag_name): $dest (SHA-256 verified)"
-Write-Host "Run setup-gateway to choose OAuth token, API key, custom gateway, or browser login."
+Write-Host "Run setup-gateway locally to manage apps, tools and logins. Use setup-gateway update only when you want a new release."
 if ($RunSetup) {
     & $dest
     if ($LASTEXITCODE -ne 0) { throw "Setup exited with code $LASTEXITCODE. Run the installed tool again to retry." }
