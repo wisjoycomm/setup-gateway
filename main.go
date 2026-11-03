@@ -1,5 +1,5 @@
-// setup-gateway points every installed coding CLI at one OpenAI-compatible
-// gateway and pulls the model list from <base-url>/models.
+// setup-gateway installs the bundled development toolkit and configures coding
+// clients for gateway, OAuth, API-key or browser authentication.
 //
 //	claude    ~/.claude/settings.json            env block (Anthropic wire)
 //	codex     ~/.codex/config.toml               [model_providers.<id>] (Responses wire)
@@ -7,164 +7,26 @@
 //	cursor    env OPENAI_BASE_URL / OPENAI_API_KEY
 //	opencode  ~/.config/opencode/opencode.jsonc  providers.<id>
 //
-// Existing settings are preserved; only the gateway keys change, and every
-// file is copied to *.bak first. Nothing here touches a project repository.
+// Claude authentication changes preserve hooks and unrelated settings. Changed
+// configuration files receive unique backups before replacement.
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
 	"strings"
-	"time"
 )
 
 func main() {
-	base := flag.String("base-url", "", "gateway URL (optional; asked interactively when omitted)")
-	key := flag.String("key", "", "API key (optional; asked interactively when omitted)")
-	provider := flag.String("provider-id", "gateway", "provider id used by codex and opencode")
-	only := flag.String("only", "claude,codex,agy,cursor,opencode", "comma-separated subset")
-	dry := flag.Bool("dry-run", false, "print what would change without writing")
-	flag.Parse()
-
-	in := bufio.NewReader(os.Stdin)
-	if *base == "" {
-		*base = ask(in, "Custom domain (e.g. https://ai.example.com)")
-	}
-	if *key == "" {
-		*key = ask(in, "API key")
-	}
-	if *base == "" || *key == "" {
-		fmt.Fprintln(os.Stderr, "domain and API key are both required")
-		os.Exit(2)
-	}
-	*base = normalize(*base)
-
-	fmt.Println("checking", strings.TrimRight(*base, "/")+"/models ...")
-	ids, err := fetchModels(*base, *key)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "gateway check failed:", err)
+	if err := runApp(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "setup-gateway:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("ok: %d models\n", len(ids))
-	preview := ids
-	if len(preview) > 5 {
-		preview = preview[:5]
-	}
-	fmt.Println("    " + strings.Join(preview, ", ") + " ...")
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	gpt := ""
-	if strings.Contains(*only, "codex") || strings.Contains(*only, "cursor") {
-		gpt = pickWorking(*base, *key, ids)
-	}
-	targets := map[string]func() (string, error){
-		"claude":   func() (string, error) { return setupClaude(home, *base, *key, ids, *dry) },
-		"codex":    func() (string, error) { return setupCodex(home, *base, *key, gpt, *provider, *dry) },
-		"cursor":   func() (string, error) { return setupCursor(*base, *key, gpt, *dry) },
-		"opencode": func() (string, error) { return setupOpenCode(home, *base, *key, ids, *provider, *dry) },
-	}
-	for _, name := range strings.Split(*only, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if name == "agy" {
-			fmt.Println("agy: SKIP - Antigravity CLI has no custom endpoint; it uses the signed-in account")
-			continue
-		}
-		fn, ok := targets[name]
-		if !ok {
-			fmt.Fprintf(os.Stderr, "unknown target %q\n", name)
-			os.Exit(2)
-		}
-		line, err := fn()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", name, err)
-			os.Exit(1)
-		}
-		fmt.Printf("%s: %s\n", name, line)
-	}
-	if *dry {
-		fmt.Println("dry run: nothing written")
-		return
-	}
-	fmt.Println("done. open a new terminal, then run claude, codex, or opencode.")
-}
-
-func ask(in *bufio.Reader, label string) string {
-	fmt.Print(label + ": ")
-	line, _ := in.ReadString('\n')
-	return strings.TrimSpace(line)
-}
-
-// normalize accepts a bare domain, a host, or a full URL and returns a /v1 base.
-func normalize(raw string) string {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimRight(raw, "/")
-	if !strings.Contains(raw, "://") {
-		raw = "https://" + raw
-	}
-	// Cut a pasted endpoint such as /v1/models or /V1/ back to the origin.
-	scheme := strings.Index(raw, "://") + 3
-	if i := strings.Index(strings.ToLower(raw[scheme:]), "/v1"); i >= 0 {
-		raw = raw[:scheme+i]
-	}
-	return strings.TrimRight(raw, "/") + "/v1"
-}
-
-func fetchModels(base, key string) ([]string, error) {
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/models", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	client := &http.Client{Timeout: 30 * time.Second}
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", res.Status, truncate(string(body), 200))
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var ids []string
-	for _, item := range payload.Data {
-		if item.ID != "" && !seen[item.ID] {
-			seen[item.ID] = true
-			ids = append(ids, item.ID)
-		}
-	}
-	sort.Strings(ids)
-	if len(ids) == 0 {
-		return nil, errors.New("endpoint returned no model ids")
-	}
-	return ids, nil
 }
 
 // pick returns the first id containing every needle and none of the exclusions.
@@ -187,113 +49,6 @@ func pick(ids []string, needles []string, exclude []string) string {
 		}
 	}
 	return ""
-}
-
-// pickWorking returns the first GPT model that answers a one-word request.
-// A gateway can list models its upstream account cannot serve, so listing
-// alone is not enough to suggest a default.
-func pickWorking(base, key string, ids []string) string {
-	var candidates []string
-	for _, id := range ids {
-		low := strings.ToLower(id)
-		if strings.Contains(low, "gpt") && !strings.Contains(low, "review") && !strings.Contains(low, "[") {
-			candidates = append(candidates, id)
-		}
-	}
-	client := &http.Client{Timeout: 45 * time.Second}
-	for i, id := range candidates {
-		if i == 6 {
-			break
-		}
-		body, _ := json.Marshal(map[string]any{"model": id, "input": "hi"})
-		req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/responses", strings.NewReader(string(body)))
-		if err != nil {
-			continue
-		}
-		req.Header.Set("Authorization", "Bearer "+key)
-		req.Header.Set("Content-Type", "application/json")
-		res, err := client.Do(req)
-		if err != nil {
-			continue
-		}
-		res.Body.Close()
-		if res.StatusCode == http.StatusOK {
-			return id
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return ids[0]
-}
-
-func backup(path string) {
-	if _, err := os.Stat(path); err == nil {
-		_ = copyFile(path, path+".bak")
-	}
-}
-
-func writeFile(path, text string, dry bool) error {
-	if dry {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	backup(path)
-	return os.WriteFile(path, []byte(text), 0o644)
-}
-
-func copyFile(from, to string) error {
-	in, err := os.ReadFile(from)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(to, in, 0o644)
-}
-
-// --- claude ---------------------------------------------------------------
-
-func setupClaude(home, base, key string, ids []string, dry bool) (string, error) {
-	path := filepath.Join(home, ".claude", "settings.json")
-	root := readJSON(path)
-	env, _ := root["env"].(map[string]any)
-	if env == nil {
-		env = map[string]any{}
-	}
-	// Claude Code appends /v1/messages itself, so it takes the bare origin.
-	env["ANTHROPIC_BASE_URL"] = strings.TrimSuffix(base, "/v1")
-	env["ANTHROPIC_AUTH_TOKEN"] = key
-	pins := map[string]string{
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":   pick(ids, []string{"opus"}, []string{"review"}),
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": pick(ids, []string{"sonnet"}, []string{"review"}),
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  pick(ids, []string{"haiku"}, nil),
-		"ANTHROPIC_DEFAULT_FABLE_MODEL":  pick(ids, []string{"fable"}, nil),
-	}
-	if pins["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "" {
-		env["ANTHROPIC_MODEL"] = pins["ANTHROPIC_DEFAULT_OPUS_MODEL"]
-	}
-	sub := pins["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
-	if sub == "" {
-		sub = pins["ANTHROPIC_DEFAULT_OPUS_MODEL"]
-	}
-	if sub != "" {
-		env["CLAUDE_CODE_SUBAGENT_MODEL"] = sub
-	}
-	var pinned []string
-	for name, value := range pins {
-		if value != "" {
-			env[name] = value
-			pinned = append(pinned, name+"="+value)
-		}
-	}
-	sort.Strings(pinned)
-	root["env"] = env
-	out, err := json.MarshalIndent(root, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return path + "\n    " + strings.Join(pinned, "\n    "), writeFile(path, string(out)+"\n", dry)
 }
 
 // --- codex ----------------------------------------------------------------
@@ -407,18 +162,6 @@ func registerOpenCodeKey(name, key string) string {
 	return "\n    " + name + " registered with the opencode service"
 }
 
-func readJSON(path string) map[string]any {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return map[string]any{}
-	}
-	var v map[string]any
-	if json.Unmarshal(b, &v) != nil || v == nil {
-		return map[string]any{}
-	}
-	return v
-}
-
 // setEnv persists a variable for future shells without printing it.
 func setEnv(name, value string) error {
 	if runtime.GOOS == "windows" {
@@ -435,15 +178,8 @@ func setEnvUnix(name, value string) error {
 	rc := filepath.Join(home, ".profile")
 	b, _ := os.ReadFile(rc)
 	text := regexp.MustCompile(`(?m)^export `+regexp.QuoteMeta(name)+`=.*\n?`).ReplaceAll(b, nil)
-	line := "export " + name + "=" + tomlString(value) + "\n"
-	return os.WriteFile(rc, append(text, []byte(line)...), 0o644)
-}
-
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
+	line := "export " + name + "='" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'\n"
+	return writeFile(rc, string(text)+line, false)
 }
 
 // stripComments removes // and /* */ comments from JSONC, leaving string
