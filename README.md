@@ -9,6 +9,19 @@ Vietnamese instructions: [HUONG-DAN.md](HUONG-DAN.md).
 
 ## Start on a new Windows machine
 
+Open **CMD** and paste this single command. It downloads and verifies the release,
+installs it into your user PATH, then opens the setup menu immediately:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup"
+```
+
+No manual download or extraction is needed. You can also run `install.cmd` from
+a source checkout. In later terminals, run `setup-gateway` again. A terminal that
+was already open may need to be restarted before it sees the updated PATH.
+
+For an offline transfer of the CLI itself:
+
 Download and extract `setup-gateway-windows-amd64.zip` from GitHub Releases, then
 double-click **Run-Setup.cmd**. The menu offers:
 
@@ -27,12 +40,12 @@ have separate prompts. A new-machine setup does not require installing every gro
 To install the CLI into your user PATH from a published release:
 
 ```powershell
-irm https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1 | iex
-setup-gateway
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup
 ```
 
 Or download `install.ps1` and run `./install.ps1 -RunSetup`. Use `-Version vX.Y.Z`
-to select a release. The installer detects Windows x64/ARM64, verifies SHA-256,
+to select a release. `-InstallDir PATH -NoPath` installs into a selected directory
+without modifying PATH. The installer detects Windows x64/ARM64, verifies SHA-256,
 and makes the command available in the current and future terminals.
 
 macOS / Linux:

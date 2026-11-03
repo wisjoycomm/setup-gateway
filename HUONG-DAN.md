@@ -5,6 +5,18 @@ Ban tai mot file executable, khong can cai Go hay Node de mo tool.
 
 ## 1. Cach de nhat tren Windows
 
+Mo **CMD**, dan mot lenh nay:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup"
+```
+
+Tool tu tai ban release, kiem tra SHA-256, cai vao PATH va mo menu ngay.
+Khong can tu tai ZIP hay giai nen. Lan sau mo CMD moi va go `setup-gateway`.
+Neu CMD/Windows Terminal dang mo tu truoc, dong han va mo lai de nhan PATH moi.
+
+Neu muon chuyen file sang may khac, van co cach dung ZIP:
+
 1. Vao muc **Releases** cua repo va tai `setup-gateway-windows-amd64.zip`.
 2. Giai nen ra mot thu muc.
 3. Chay `Run-Setup.cmd`.
@@ -34,8 +46,7 @@ Khi cai package, Windows co the hien UAC; Homebrew/Linux co the hoi mat khau sud
 Sau khi ban moi da duoc phat hanh, mo PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1 | iex
-setup-gateway
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup
 ```
 
 Installer tu chon ban Windows x64/ARM64 va kiem tra SHA-256.
