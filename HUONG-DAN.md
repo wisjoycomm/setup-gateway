@@ -8,7 +8,7 @@ Ban tai mot file executable, khong can cai Go hay Node de mo tool.
 Mo **CMD**, dan mot lenh nay:
 
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup"
 ```
 
 Tool tu tai ban release, kiem tra SHA-256, cai vao PATH va mo menu ngay.
@@ -46,7 +46,7 @@ Khi cai package, Windows co the hien UAC; Homebrew/Linux co the hoi mat khau sud
 Sau khi ban moi da duoc phat hanh, mo PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup
+& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup
 ```
 
 Installer tu chon ban Windows x64/ARM64 va kiem tra SHA-256.

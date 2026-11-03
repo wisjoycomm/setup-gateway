@@ -13,7 +13,7 @@ Open **CMD** and paste this single command. It downloads and verifies the releas
 installs it into your user PATH, then opens the setup menu immediately:
 
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup"
 ```
 
 No manual download or extraction is needed. You can also run `install.cmd` from
@@ -40,7 +40,7 @@ have separate prompts. A new-machine setup does not require installing every gro
 To install the CLI into your user PATH from a published release:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/wisjoycomm/setup-gateway/main/install.ps1'))) -RunSetup
+& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup
 ```
 
 Or download `install.ps1` and run `./install.ps1 -RunSetup`. Use `-Version vX.Y.Z`
