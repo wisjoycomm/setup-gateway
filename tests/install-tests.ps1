@@ -31,6 +31,7 @@ try {
                 if ($Uri -eq 'https://example.invalid/checksums') { return [pscustomobject]@{ Content="$expectedHash  $assetName`n" } }
                 throw 'Unexpected network request in test'
             }
+            function Get-FileHash { throw 'Installer must not depend on Get-FileHash module auto-loading' }
             $failed = $false
             try { & $installer -Version 'v-test' -InstallDir $caseDir -NoPath }
             catch { $failed = $true }
@@ -39,7 +40,7 @@ try {
                 if ([IO.File]::ReadAllText($dest) -ne 'previous installation') { throw "$testCase replaced the old binary" }
             } else {
                 if ($failed) { throw "$testCase unexpectedly failed" }
-                if ((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -ne $expectedHash) { throw "$testCase installed wrong bytes" }
+                if ([IO.File]::ReadAllText($dest) -ne 'test binary, never executed') { throw "$testCase installed wrong bytes" }
             }
             if (@(Get-ChildItem -LiteralPath $caseDir -Filter '*.tmp' -Force).Count) { throw "$testCase left a temporary download" }
             Write-Host "PASS installer $testCase"
