@@ -39,7 +39,11 @@ try {
         }
     }
     if (-not $expected) { throw "Release has no SHA-256 for $asset; installation stopped." }
-    if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expected) { throw "SHA-256 mismatch; existing installation was not replaced." }
+    $hashStream = [IO.File]::OpenRead($download)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { $actual = ([BitConverter]::ToString($hasher.ComputeHash($hashStream))).Replace('-', '') }
+    finally { $hasher.Dispose(); $hashStream.Dispose() }
+    if ($actual -ne $expected) { throw "SHA-256 mismatch; existing installation was not replaced." }
     Move-Item -LiteralPath $download -Destination $dest -Force
 } finally {
     if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
