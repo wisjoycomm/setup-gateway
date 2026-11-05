@@ -64,11 +64,14 @@ func pickOne(input io.Reader, out io.Writer, title string, names, labels []strin
 	printOptions(out, title, names, labels, def)
 	hint := fmt.Sprintf("Gõ số [1-%d]", len(names))
 	if def > 0 {
-		hint += fmt.Sprintf(", Enter = %d", def)
+		hint += fmt.Sprintf(", Enter = %d, 0 = quay lại", def)
 	} else {
-		hint += ", Enter = quay lại"
+		hint += ", Enter hoặc 0 = quay lại"
 	}
 	answer := menuAnswer(input, out, hint)
+	if answer == "0" {
+		return "", errCancelled
+	}
 	if answer == "" {
 		if def > 0 {
 			return names[def-1], nil
@@ -88,7 +91,10 @@ func pickOne(input io.Reader, out io.Writer, title string, names, labels []strin
 // pickMany is pickOne for several answers, e.g. "1 3 5", "2-4" or "all".
 func pickMany(input io.Reader, out io.Writer, title string, names, labels []string) ([]string, error) {
 	printOptions(out, title, names, labels, 0)
-	answer := menuAnswer(input, out, "Gõ số, nhiều số cách nhau dấu cách (vd 1 3, 2-4), all = tất cả, Enter = quay lại")
+	answer := menuAnswer(input, out, "Gõ số, nhiều số cách nhau dấu cách (vd 1 3, 2-4), all = tất cả, Enter hoặc 0 = quay lại")
+	if answer == "0" {
+		return nil, errCancelled
+	}
 	if answer == "" {
 		return nil, nil
 	}

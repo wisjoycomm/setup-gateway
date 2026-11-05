@@ -142,7 +142,7 @@ func TestMenuReturnsAfterReadOnlyOperationsWithoutNetwork(t *testing.T) {
 	var out bytes.Buffer
 	// App status, configuration guidance, cancelled toolkit menu, help, invalid choice, exit.
 	// Never choose menu items that install software: tests must not change the machine.
-	err := mainMenu(strings.NewReader("4\n1\n\n3\n1\ncursor\n4\n0\nh\ninvalid\n0\n"), &out)
+	err := mainMenu(strings.NewReader("1\n2\n\n0\n3\n2\n1\ncursor\n0\n0\n1\n0\nh\ninvalid\n0\n"), &out)
 	if err != nil || r.calls != 0 {
 		t.Fatal(err, r.calls)
 	}
@@ -173,10 +173,10 @@ func TestMenuReachesTokenTable(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	t.Setenv("CODEX_HOME", t.TempDir())
 	var out bytes.Buffer
-	if err := mainMenu(strings.NewReader("3\n8\n0\n"), &out); err != nil {
+	if err := mainMenu(strings.NewReader("3\n1\n0\n"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Token đã dùng") {
+	if !strings.Contains(out.String(), "Cả máy") {
 		t.Errorf("out:\n%s", out.String())
 	}
 }
@@ -285,5 +285,62 @@ func TestReplaceRunningExecutable(t *testing.T) {
 	b, err := os.ReadFile(copyPath)
 	if err != nil || string(b) != "replacement" {
 		t.Fatal("running executable not replaced", err)
+	}
+}
+
+func TestMenuZeroGoesBackOneLevel(t *testing.T) {
+	var out bytes.Buffer
+	// Main > AI Agent > agent settings, then 0 three times, one level each.
+	if err := mainMenu(strings.NewReader("3\n2\n0\n0\n0\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(out.String(), "Chọn [0-2]"); got != 2 {
+		t.Errorf("AI Agent shown %d times, want 2:\n%s", got, out.String())
+	}
+	if got := strings.Count(out.String(), menuPrompt); got != 2 {
+		t.Errorf("main menu shown %d times, want 2:\n%s", got, out.String())
+	}
+}
+
+func TestEveryQuestionCancelsWithZero(t *testing.T) {
+	t.Setenv("SETUP_GATEWAY_KEY", "")
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	root := t.TempDir()
+	in := func(answers string) (io.Reader, io.Writer) {
+		return strings.NewReader(answers), io.Discard
+	}
+	claude := func(answers string) func() error {
+		return func() error { r, w := in(answers); return runCLIWithHome(nil, r, w, home) }
+	}
+	codex := func(answers string) func() error {
+		return func() error { r, w := in(answers); return configureAPIClient("codex", nil, r, w, home) }
+	}
+	cases := map[string]func() error{
+		"pick one":          func() error { r, w := in("0\n"); _, err := pickOne(r, w, "", []string{"a"}, nil, 1); return err },
+		"pick many":         func() error { r, w := in("0\n"); _, err := pickMany(r, w, "", []string{"a"}, nil); return err },
+		"app list":          func() error { r, w := in("0\n"); return appMenu("install", r, w) },
+		"new machine":       func() error { r, w := in("0\n"); return onboard(r, w) },
+		"new machine apps":  func() error { r, w := in("\n0\n"); return onboard(r, w) },
+		"new machine last":  func() error { r, w := in("\n\n\n0\n"); return onboard(r, w) },
+		"project folder":    func() error { r, w := in("0\n"); return initMenu(r, w) },
+		"project stacks":    func() error { r, w := in("0\n"); return runInit([]string{root}, r, w) },
+		"claude connection": claude("0\n"),
+		"claude apps":       claude("1\n0\n"),
+		"claude domain":     claude("1\n\n0\n"),
+		"claude key":        claude("1\n\nai.example.com\n0\n"),
+		"codex connection":  codex("0\n"),
+		"codex domain":      codex("3\n0\n"),
+		"codex key":         codex("3\nai.example.com\n0\n"),
+	}
+	for name, run := range cases {
+		if err := run(); !errors.Is(err, errCancelled) {
+			t.Errorf("%s: err = %v, want errCancelled", name, err)
+		}
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Errorf("cancelling wrote into the project: %v", entries)
 	}
 }

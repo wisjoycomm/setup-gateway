@@ -1,6 +1,6 @@
 # Cài máy mới
 
-Gõ `wj`, chọn mục 1 để tool hỏi từng bước. Hoặc chạy từng lệnh:
+Gõ `wj`, chọn **Ứng dụng & môi trường** rồi **Cài máy mới** để tool hỏi từng bước. Hoặc chạy từng lệnh:
 
 ```text
 wj apps list                     xem app nào đã cài

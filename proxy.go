@@ -320,7 +320,7 @@ func ensureMitm(home, tool string, assumeYes bool, input io.Reader, out io.Write
 		if !interactive(input) {
 			return "", errors.New("chưa có mitmproxy; thêm -yes để tự cài, hoặc: wj apps install mitmproxy")
 		}
-		answer := menuAnswer(input, out, "Máy chưa có mitmproxy. Cài ngay? [Y/n]")
+		answer := menuAnswer(input, out, "Máy chưa có mitmproxy. Cài ngay? [Y/n, n hoặc 0 = huỷ]")
 		if answer != "" && !yes(answer) {
 			return "", errors.New("đã huỷ; cài sau bằng: wj apps install mitmproxy")
 		}

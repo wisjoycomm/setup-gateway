@@ -285,8 +285,12 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		*auth = "gateway"
 	}
 	if *auth == "" {
-		fmt.Fprintf(out, "Kết nối %s - bạn đang có gì?\n  1. Tài khoản, đăng nhập trên trình duyệt  -> Đăng nhập\n  2. API key trực tiếp (OpenAI / Anthropic)  -> API key\n  3. Domain công ty (vd ai.adnx.vn) + key    -> Gateway\n", id)
-		*auth = map[string]string{"1": "login", "2": "api-key", "3": "gateway"}[menuAnswer(input, out, "Chọn [1-3]")]
+		fmt.Fprintf(out, "Kết nối %s - bạn đang có gì?\n  1. Tài khoản, đăng nhập trên trình duyệt  -> Đăng nhập\n  2. API key trực tiếp (OpenAI / Anthropic)  -> API key\n  3. Domain công ty (vd ai.adnx.vn) + key    -> Gateway\n  0. Quay lại\n", id)
+		answer := menuAnswer(input, out, "Chọn [0-3]")
+		if answer == "" || answer == "0" {
+			return errCancelled
+		}
+		*auth = map[string]string{"1": "login", "2": "api-key", "3": "gateway"}[answer]
 		// Offer gateways already saved for Claude so the key is not typed twice.
 		if *auth == "gateway" && *base == "" && !*keyStdin {
 			names, labels := savedGatewayProfiles(home)
@@ -352,7 +356,10 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 			if *keyStdin {
 				return errors.New("-key-stdin cần kèm -base-url khi dùng gateway")
 			}
-			*base = menuAnswer(input, out, "Domain gateway (vd ai.adnx.vn)")
+			*base = menuAnswer(input, out, "Domain gateway (vd ai.adnx.vn; Enter hoặc 0 = quay lại)")
+			if *base == "" || *base == "0" {
+				return errCancelled
+			}
 		}
 		reader := bufio.NewReader(&oneByteReader{input})
 		if *keyStdin {
@@ -360,7 +367,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		} else {
 			key = strings.TrimSpace(os.Getenv("SETUP_GATEWAY_KEY"))
 			if key == "" {
-				key, err = promptSecret(input, reader, out, "Dán key (gõ sẽ không hiện ra)")
+				key, err = askKey(input, reader, out, "Dán key")
 				if err != nil {
 					return err
 				}

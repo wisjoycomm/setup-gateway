@@ -77,8 +77,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			if *base != "" || *key != "" || *keyStdin || os.Getenv("SETUP_GATEWAY_KEY") != "" {
 				*auth = "gateway"
 			} else {
-				fmt.Fprintln(out, "Kết nối Claude Code - bạn đang có gì?\n  1. Domain công ty (vd ai.adnx.vn) + key của domain đó   -> Gateway\n  2. Token bắt đầu bằng sk-ant-oat...                      -> Token OAuth\n  3. API key từ console.anthropic.com                      -> API key\n  4. Tài khoản Claude Pro/Max, đăng nhập trên trình duyệt  -> Đăng nhập web")
-				choice := prompt(reader, out, "Chọn [1-4]")
+				fmt.Fprintln(out, "Kết nối Claude Code - bạn đang có gì?\n  1. Domain công ty (vd ai.adnx.vn) + key của domain đó   -> Gateway\n  2. Token bắt đầu bằng sk-ant-oat...                      -> Token OAuth\n  3. API key từ console.anthropic.com                      -> API key\n  4. Tài khoản Claude Pro/Max, đăng nhập trên trình duyệt  -> Đăng nhập web\n  0. Quay lại")
+				choice := prompt(reader, out, "Chọn [0-4]")
+				if choice == "" || choice == "0" {
+					return errCancelled
+				}
 				*auth = map[string]string{"1": "gateway", "2": "oauth", "3": "api-key", "4": "login"}[choice]
 				if *auth == "" {
 					return errors.New("hãy chọn số từ 1 đến 4")
@@ -91,7 +94,10 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			if wizard && *auth == "gateway" {
 				clients := []string{"claude", "codex", "opencode", "cursor", "agy"}
 				printOptions(out, "Dùng gateway này cho app nào?", clients, []string{"Claude Code", "Codex CLI", "OpenCode", "Cursor (hướng dẫn)", "Antigravity (bỏ qua, không hỗ trợ gateway)"}, 1)
-				choice := prompt(reader, out, "Gõ số (vd 1 2 3), all = tất cả, Enter = chỉ Claude")
+				choice := prompt(reader, out, "Gõ số (vd 1 2 3), all = tất cả, Enter = chỉ Claude, 0 = quay lại")
+				if choice == "0" {
+					return errCancelled
+				}
 				if choice != "" {
 					picked, err := parseChoices(choice, clients)
 					if err != nil {
@@ -108,7 +114,10 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			if *keyStdin {
 				return errors.New("-key-stdin cần kèm -base-url khi dùng gateway")
 			}
-			*base = prompt(reader, out, "Domain gateway (vd ai.adnx.vn)")
+			*base = prompt(reader, out, "Domain gateway (vd ai.adnx.vn; Enter hoặc 0 = quay lại)")
+			if *base == "" || *base == "0" {
+				return errCancelled
+			}
 		}
 		if *keyStdin {
 			if *key != "" {
@@ -119,11 +128,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			*key = strings.TrimSpace(os.Getenv("SETUP_GATEWAY_KEY"))
 		}
 		if *key == "" && *auth != "login" {
-			label := "Dán key (gõ sẽ không hiện ra)"
+			label := "Dán key"
 			if *auth == "oauth" {
-				label = "Dán token sk-ant-oat... (gõ sẽ không hiện ra)"
+				label = "Dán token sk-ant-oat..."
 			}
-			*key, err = promptSecret(input, reader, out, label)
+			*key, err = askKey(input, reader, out, label)
 			if err != nil {
 				return err
 			}
@@ -141,7 +150,10 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		return err
 	}
 	if wizard && len(targets) == 1 && targets[0] == "claude" {
-		*profile = prompt(reader, out, "Lưu kết nối này với tên gì để đổi lại sau? (vd adnx, work; Enter = không lưu)")
+		*profile = prompt(reader, out, "Lưu kết nối này với tên gì để đổi lại sau? (vd adnx, work; Enter = không lưu, 0 = quay lại)")
+		if *profile == "0" {
+			return errCancelled
+		}
 		if *profile != "" && !validName(*profile) {
 			return errors.New("tên profile chỉ gồm chữ, số, _ hoặc - (vd adnx, work)")
 		}
@@ -170,7 +182,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		fmt.Fprintf(out, "Key hợp lệ, gateway có %d model.\n", len(ids))
 	}
 	if wizard && contains(targets, "claude") && findClaude(home) == "" {
-		*install = yes(prompt(reader, out, "Máy chưa có Claude Code. Cài luôn? [y/N]"))
+		answer := prompt(reader, out, "Máy chưa có Claude Code. Cài luôn? [y/N, Enter = không cài, 0 = quay lại]")
+		if answer == "0" {
+			return errCancelled
+		}
+		*install = yes(answer)
 	}
 	if *install {
 		if err := ensureClaude(home, *dry, out); err != nil {
@@ -250,6 +266,15 @@ func promptSecret(input io.Reader, reader *bufio.Reader, out io.Writer, label st
 		return strings.TrimSpace(string(value)), err
 	}
 	return prompt(reader, out, label), nil
+}
+
+// askKey is the one way back from a key prompt: without a key there is nothing to do.
+func askKey(input io.Reader, reader *bufio.Reader, out io.Writer, label string) (string, error) {
+	value, err := promptSecret(input, reader, out, label+" (gõ sẽ không hiện ra; Enter hoặc 0 = quay lại)")
+	if err == nil && (value == "" || value == "0") {
+		return "", errCancelled
+	}
+	return value, err
 }
 
 func splitList(value string) []string {

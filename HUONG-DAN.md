@@ -41,11 +41,10 @@ Neu chi co source Git, xem muc Build o cuoi file nay.
 Menu:
 
 ```text
-   1. Cài máy mới (hỏi từng bước)
+   1. Ứng dụng & môi trường (máy mới, ứng dụng, công cụ dòng lệnh)
    2. Setup project (rule, skill Orca)
    3. AI Agent (kết nối, model, xem token, kiểm tra cấu hình)
-   4. Ứng dụng (cài, cập nhật, công cụ dòng lệnh)
-   5. Cập nhật wj
+   4. Cập nhật wj
 
    h. Hướng dẫn nhanh      0. Thoát
 ```
