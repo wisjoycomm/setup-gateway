@@ -21,7 +21,7 @@ func runCLI(args []string, input io.Reader, out io.Writer) error {
 }
 
 func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) error {
-	flags := flag.NewFlagSet("setup-gateway", flag.ContinueOnError)
+	flags := flag.NewFlagSet("wj", flag.ContinueOnError)
 	flags.SetOutput(out)
 	auth := flags.String("auth", "", "cách kết nối: gateway, oauth (token sk-ant-oat), api-key, login (đăng nhập web)")
 	base := flags.String("base-url", "", "domain gateway, vd ai.adnx.vn (không cần https://)")
@@ -46,7 +46,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("có tham số không hiểu; xem: setup-gateway help claude")
+		return errors.New("có tham số không hiểu; xem: wj help claude")
 	}
 	var err error
 	if *list {
@@ -169,9 +169,6 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		}
 		fmt.Fprintf(out, "Key hợp lệ, gateway có %d model.\n", len(ids))
 	}
-	if p.Auth == "gateway" && contains(targets, "claude") && !*dry && *models == "" && *use == "" && pick(p.Models, []string{"claude"}, nil) == "" && pick(p.Models, []string{"opus"}, nil) == "" && pick(p.Models, []string{"sonnet"}, nil) == "" && pick(p.Models, []string{"haiku"}, nil) == "" && pick(p.Models, []string{"fable"}, nil) == "" {
-		return errors.New("gateway không có model Claude nào; nhập tên model bằng -models (thêm -skip-check nếu gateway không có /v1/models)")
-	}
 	if wizard && contains(targets, "claude") && findClaude(home) == "" {
 		*install = yes(prompt(reader, out, "Máy chưa có Claude Code. Cài luôn? [y/N]"))
 	}
@@ -189,7 +186,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		}
 		fmt.Fprintf(out, "Đã lưu profile: %s (%s)\n", *profile, p.Auth)
 	}
+	// Gateways name models their own way: a GPT-style name is only a preference.
 	gpt := pick(p.Models, []string{"gpt"}, []string{"review"})
+	if gpt == "" && len(p.Models) > 0 {
+		gpt = p.Models[0]
+	}
 	for _, name := range targets {
 		var line string
 		var err error
@@ -197,7 +198,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		case "claude":
 			line, err = applyClaude(home, p, *dry)
 		case "codex":
-			line, err = setupCodex(home, p.BaseURL, p.Credential, gpt, *provider, *dry)
+			line, err = applyCodexModels(home, "gateway", p.BaseURL, p.Credential, gpt, *provider, p.Models, *dry)
 		case "cursor":
 			line = setupCursor()
 		case "opencode":
@@ -225,7 +226,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			fmt.Fprintln(out, "Đã lưu token OAuth. Không cần đăng nhập web; Claude sẽ kiểm tra token ở lần chat đầu.")
 		}
 		if findClaude(home) == "" {
-			fmt.Fprintln(out, "Máy chưa có Claude Code. Cài bằng: setup-gateway apps install claude")
+			fmt.Fprintln(out, "Máy chưa có Claude Code. Cài bằng: wj apps install claude")
 		}
 		fmt.Fprintln(out, "Xong. Mở phiên Claude MỚI rồi gõ /status để kiểm tra (phiên đang mở vẫn dùng kết nối cũ).")
 		if *launch {
@@ -279,7 +280,7 @@ func validateTargets(targets []string, p connectionProfile, profile bool) error 
 			return fmt.Errorf("không có app %q (chọn trong: claude, codex, cursor, opencode, agy)", target)
 		}
 		if (p.Auth != "gateway" || profile || p.Header == "x-api-key") && target != "claude" {
-			return errors.New("token OAuth, API key, đăng nhập web, profile và header x-api-key chỉ áp dụng cho Claude (-only claude). App khác: setup-gateway configure codex")
+			return errors.New("token OAuth, API key, đăng nhập web, profile và header x-api-key chỉ áp dụng cho Claude (-only claude). App khác: wj configure codex")
 		}
 	}
 	return nil

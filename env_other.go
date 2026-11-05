@@ -3,12 +3,21 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 func prepareConsole() func() { return func() {} }
+
+func enableTerminalEscapes() func() { return func() {} }
+
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
 
 func refreshProcessPath() {
 	home, err := os.UserHomeDir()

@@ -95,7 +95,8 @@ func TestSwitchAuthenticationPreservesUserSettings(t *testing.T) {
 			if env["ANTHROPIC_BASE_URL"] != "https://new.example" || env["ANTHROPIC_API_KEY"] != p.Credential || env["CLAUDE_CODE_OAUTH_TOKEN"] != nil {
 				t.Fatal("wrong gateway credentials")
 			}
-			if env["ANTHROPIC_MODEL"] != "cc/claude-sonnet" {
+			// An env model would override the user's later /model choice.
+			if env["ANTHROPIC_MODEL"] != nil || after["model"] != "cc/claude-sonnet" {
 				t.Fatal("sonnet-only gateway did not select its model")
 			}
 		}

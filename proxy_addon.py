@@ -1,4 +1,4 @@
-"""setup-gateway usage meter for mitmproxy.
+"""wj usage meter for mitmproxy.
 
 Records one JSON line per model call: time, project, client, host, model,
 HTTP status and token counts. Request/response headers and bodies (prompts, answers,
@@ -80,7 +80,7 @@ def _absorb_bytes(state, data):
 
 
 def _project(flow):
-    # setup-gateway proxy run puts the project name in the proxy URL user part;
+    # wj proxy run puts the project name in the proxy URL user part;
     # clients send it as Proxy-Authorization on CONNECT. The password is unused.
     auth = flow.request.headers.get("proxy-authorization", "")
     if not auth.lower().startswith("basic "):

@@ -380,7 +380,7 @@ Write-Host '  Dong cua so nay, mo Windows Terminal moi, go  tips  de xem cac len
 Write-Host '  Lan dau chay: claude / codex / agy se mo trinh duyet de dang nhap.'
 $bad = @($results | Where-Object { $_.'Ket qua' -like 'loi*' })
 if ($bad.Count) {
-    Write-Host '  Cai loi phan nao: chay lai setup-gateway tools install cli.' -ForegroundColor Yellow
+    Write-Host '  Cai loi phan nao: chay lai wj tools install cli.' -ForegroundColor Yellow
     exit 1
 }
 exit 0

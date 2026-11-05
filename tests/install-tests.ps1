@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path (Split-Path $PSScriptRoot) 'install.ps1'
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('setup-gateway-installer-test-' + [guid]::NewGuid().ToString('N'))
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('wj-installer-test-' + [guid]::NewGuid().ToString('N'))
 $processPathBefore = $env:Path
 $userPathBefore = [Environment]::GetEnvironmentVariable('Path', 'User')
 New-Item -ItemType Directory -Path $testRoot | Out-Null
@@ -15,8 +15,8 @@ try {
             try { $expectedHash = ([BitConverter]::ToString($hasher.ComputeHash($payload))).Replace('-', '').ToLowerInvariant() }
             finally { $hasher.Dispose() }
             $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-            $assetName = if ($arch -eq 'ARM64') { 'setup-gateway-windows-arm64.exe' } else { 'setup-gateway.exe' }
-            $dest = Join-Path $caseDir 'setup-gateway.exe'
+            $assetName = if ($arch -eq 'ARM64') { 'wj-windows-arm64.exe' } else { 'wj.exe' }
+            $dest = Join-Path $caseDir 'wj.exe'
             [IO.File]::WriteAllText($dest, 'previous installation')
             if ($testCase -eq 'reuse') { [IO.File]::WriteAllBytes($dest, $payload) }
             function Invoke-RestMethod {
@@ -54,7 +54,7 @@ try {
     Write-Host 'PASS installer leaves PATH unchanged with -NoPath'
 } finally {
     $resolvedTestRoot = [IO.Path]::GetFullPath($testRoot)
-    $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\setup-gateway-installer-test-'
+    $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\wj-installer-test-'
     if (-not $resolvedTestRoot.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected cleanup directory' }
     Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
 }

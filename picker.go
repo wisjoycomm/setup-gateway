@@ -113,7 +113,7 @@ func pickProfile(input io.Reader, out io.Writer) error {
 }
 
 func savedProfiles(home string) (names, labels []string) {
-	entries, _ := os.ReadDir(filepath.Join(home, ".setup-gateway", "profiles"))
+	entries, _ := os.ReadDir(filepath.Join(stateDir(home), "profiles"))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue

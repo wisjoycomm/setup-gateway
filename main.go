@@ -1,4 +1,4 @@
-// setup-gateway installs the bundled development toolkit and configures coding
+// wj (formerly setup-gateway) installs the bundled development toolkit and configures coding
 // clients for gateway, OAuth, API-key or browser authentication.
 //
 //	claude    ~/.claude/settings.json            env block (Anthropic wire)
@@ -20,10 +20,11 @@ import (
 
 func main() {
 	restore := prepareConsole()
+	migrateLegacy(os.Args[1:], os.Stderr)
 	err := runApp(os.Args[1:], os.Stdin, os.Stdout)
 	restore()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "setup-gateway:", err)
+		fmt.Fprintln(os.Stderr, "wj:", err)
 		os.Exit(1)
 	}
 }
@@ -50,12 +51,8 @@ func pick(ids []string, needles []string, exclude []string) string {
 	return ""
 }
 
-func setupCodex(home, base, key, model, provider string, dry bool) (string, error) {
-	return applyCodex(home, "gateway", base, key, model, provider, dry)
-}
-
 func setupCursor() string {
-	return "MANUAL - mở Cursor > Settings > Models, nhập API key và Base URL (nếu Cursor hỗ trợ). Xem: setup-gateway configure cursor. Không ghi biến OPENAI_* toàn máy."
+	return "MANUAL - mở Cursor > Settings > Models, nhập API key và Base URL (nếu Cursor hỗ trợ). Xem: wj configure cursor. Không ghi biến OPENAI_* toàn máy."
 }
 
 func setupOpenCode(home, base, key string, ids []string, provider string, dry bool) (string, error) {

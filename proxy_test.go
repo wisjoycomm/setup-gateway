@@ -69,7 +69,7 @@ func TestProxyUsageWithoutLogAndDryRuns(t *testing.T) {
 	if err := proxyRun([]string{"-proxy", "socks5://x", "codex"}, strings.NewReader(""), &out, home); err == nil {
 		t.Fatal("unsupported proxy URL accepted")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".setup-gateway")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".wj")); !os.IsNotExist(err) {
 		t.Fatal("dry run wrote files")
 	}
 	if !strings.Contains(out.String(), "9001") || !strings.Contains(out.String(), "10.0.0.5:8080") {
@@ -244,7 +244,7 @@ func TestCodexGatewayCatalogListsEveryModel(t *testing.T) {
 		t.Fatal("GPT models not first", catalog.Models[0]["slug"])
 	}
 	cfg, _ := os.ReadFile(codexConfigPath(home))
-	if !strings.Contains(string(cfg), "setup-gateway-models.json") {
+	if !strings.Contains(string(cfg), "wj-models.json") {
 		t.Fatal("catalog not wired into config.toml")
 	}
 	if _, err := applyCodex(home, "login", "", "", "", "", false); err != nil {

@@ -41,7 +41,7 @@ func appByID(id string) (appSpec, error) {
 			return app, nil
 		}
 	}
-	return appSpec{}, fmt.Errorf("không có app %q; xem tên app: setup-gateway apps list", id)
+	return appSpec{}, fmt.Errorf("không có app %q; xem tên app: wj apps list", id)
 }
 
 func appCandidates(app appSpec, home, platform string) []string {
@@ -205,7 +205,7 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 		return nil
 	}
 	if len(args) < 2 || (args[0] != "install" && args[0] != "update") {
-		return errors.New("cách dùng: apps list | apps install TÊN,TÊN | apps update TÊN,TÊN [-dry-run]; TÊN có thể là all. Xem: setup-gateway help apps")
+		return errors.New("cách dùng: apps list | apps install TÊN,TÊN | apps update TÊN,TÊN [-dry-run]; TÊN có thể là all. Xem: wj help apps")
 	}
 	flags := flag.NewFlagSet("apps", flag.ContinueOnError)
 	flags.SetOutput(out)
@@ -214,7 +214,7 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("có tham số không hiểu; xem: setup-gateway help apps")
+		return errors.New("có tham số không hiểu; xem: wj help apps")
 	}
 	ids := splitList(args[1])
 	if args[1] == "all" {

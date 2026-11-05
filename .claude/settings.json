@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(pwsh -NoProfile -NonInteractive -File .claude/skills/orca-stateless-worker/scripts/fast_verify.ps1 *)",
+      "Bash(pwsh -NoProfile -NonInteractive -File .claude/skills/orca-orchestrator/scripts/plan.ps1)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(rg *)",
+      "Bash(fd *)",
+      "Bash(jq *)",
+      "Bash(eza *)",
+      "Bash(npm ci)",
+      "Bash(npm install)",
+      "Bash(pnpm install --frozen-lockfile)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(go build *)",
+      "Bash(gofmt -l *)"
+    ],
+    "ask": [
+      "Bash(git push)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(git reset --hard)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)"
+    ]
+  }
+}

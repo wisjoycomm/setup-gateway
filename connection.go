@@ -178,7 +178,7 @@ func profilePath(home, name string) (string, error) {
 	if !validName(name) {
 		return "", errors.New("tên profile chỉ gồm chữ, số, _ hoặc - (vd adnx, work)")
 	}
-	return filepath.Join(home, ".setup-gateway", "profiles", name+".json"), nil
+	return filepath.Join(stateDir(home), "profiles", name+".json"), nil
 }
 
 func saveProfile(home, name string, p connectionProfile, dry bool) error {
@@ -201,7 +201,7 @@ func loadProfile(home, name string) (connectionProfile, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return p, fmt.Errorf("không có profile %q; xem danh sách: setup-gateway -list-profiles", name)
+		return p, fmt.Errorf("không có profile %q; xem danh sách: wj -list-profiles", name)
 	}
 	if err := json.Unmarshal(data, &p); err != nil {
 		return p, fmt.Errorf("file profile %q bị hỏng", name)
@@ -211,7 +211,7 @@ func loadProfile(home, name string) (connectionProfile, error) {
 }
 
 func listProfiles(home string, out io.Writer) error {
-	entries, err := os.ReadDir(filepath.Join(home, ".setup-gateway", "profiles"))
+	entries, err := os.ReadDir(filepath.Join(stateDir(home), "profiles"))
 	if errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintln(out, "Chưa lưu profile nào. Khi kết nối Claude, đặt tên ở câu hỏi cuối (hoặc thêm -profile TÊN).")
 		return nil

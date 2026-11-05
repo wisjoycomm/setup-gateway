@@ -1,4 +1,17 @@
-# Huong dan cai may moi - Wisjoy setup-gateway
+# Huong dan cai may moi - Wisjoy wj
+
+Ten cu la `setup-gateway`. May da cai van chay binh thuong: lan chay dau tien tool tu
+chuyen `~/.setup-gateway` sang `~/.wj` va tao them lenh `wj` canh lenh cu.
+
+Setup ban dau cho mot project: `cd` vao project roi chay `wj init` (chon job: unity,
+web, go, python; them `-dry-run` de xem truoc). Tool cai rule chung, rule theo job va
+skill Orca, khong de file da co. Chi tiet: `wj help init`.
+
+De xem cac agent co khop cau hinh khong, chay `wj check` (chi doc, khong can
+mang, khong hien key).
+
+Xem token moi project: `wj top`, `wj overlay`, `wj usage`. Lay lai model tu gateway:
+`wj models`. Tai lieu ngan cho tung phan: [docs/](docs/README.md).
 
 Mot tool CLI gom bo `Bo_cong_cu`, Claude, Codex, OpenCode, Cursor, Antigravity va Orca.
 Ban tai mot file executable, khong can cai Go hay Node de mo tool.
@@ -8,16 +21,16 @@ Ban tai mot file executable, khong can cai Go hay Node de mo tool.
 Mo **CMD**, dan mot lenh nay:
 
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/wj/releases/latest/download/install.ps1'))) -RunSetup"
 ```
 
 Tool tu tai ban release, kiem tra SHA-256, cai vao PATH va mo menu ngay.
-Khong can tu tai ZIP hay giai nen. Lan sau mo CMD moi va go `setup-gateway`.
+Khong can tu tai ZIP hay giai nen. Lan sau mo CMD moi va go `wj`.
 Neu CMD/Windows Terminal dang mo tu truoc, dong han va mo lai de nhan PATH moi.
 
 Neu muon chuyen file sang may khac, van co cach dung ZIP:
 
-1. Vao muc **Releases** cua repo va tai `setup-gateway-windows-amd64.zip`.
+1. Vao muc **Releases** cua repo va tai `wj-windows-amd64.zip`.
 2. Giai nen ra mot thu muc.
 3. Chay `Run-Setup.cmd`.
 4. Chon `1` de cai may moi, hoac chon tung muc rieng.
@@ -33,22 +46,27 @@ Menu:
    2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
    3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
    4. Cài quản lý cửa sổ (không bắt buộc)
+  14. Setup project: rule chung + rule theo job (Unity, web...), skill Orca
  KẾT NỐI / ĐĂNG NHẬP
    5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
    6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
    7. Đổi kết nối Claude đã lưu (profile)
  KIỂM TRA
    8. Xem ứng dụng đã cài
-   9. Đo token đã dùng (qua mitmproxy)
+  15. Xem token mọi project, cập nhật liên tục (wj top)
+  16. Bật overlay token luôn nổi trên màn hình (wj overlay)
+   9. Đo token qua mitmproxy (cho app khác Claude/Codex)
+  13. Xem các agent có khớp cấu hình không (wj check)
+  17. Lấy lại danh sách model từ gateway (wj models)
  CẬP NHẬT / GỠ
   10. Cập nhật ứng dụng
-  11. Cập nhật setup-gateway
+  11. Cập nhật wj
   12. Gỡ bộ công cụ / quản lý cửa sổ
 
    h. Hướng dẫn nhanh      0. Thoát
 ```
 
-Quen lenh nao thi go `setup-gateway help` (hoac `help claude`, `help codex`,
+Quen lenh nao thi go `wj help` (hoac `help claude`, `help codex`,
 `help proxy`, `help apps`, `help tools`, `help words` de xem giai thich tu ngu).
 Tren Windows tool tu bat UTF-8 de hien dung tieng Viet co dau.
 
@@ -60,22 +78,22 @@ nhau dau cach (vd `1 2 9`), khoang `2-4`, `all` = tat ca, Enter = mac dinh/quay 
 
 ### Cai mot lan, dung lai tai may
 
-Sau lan cai dau, chi can go `setup-gateway`. Khong clone Git, khong tai lai
+Sau lan cai dau, chi can go `wj`. Khong clone Git, khong tai lai
 source va khong tu check update khi mo menu. Lenh `apps list` va `version`
 cung hoat dong offline. Chi tai khi ban chon cai/cap nhat; dang nhap va
 kiem tra gateway van can mang. Tung app co the co auto-update rieng.
 
 ```text
-setup-gateway apps list
-setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
-setup-gateway apps install all -dry-run
-setup-gateway apps update codex,orca
-setup-gateway update
-setup-gateway version
+wj apps list
+wj apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
+wj apps install all -dry-run
+wj apps update codex,orca
+wj update
+wj version
 ```
 
 `apps install` bo qua app da phat hien tren may. `apps update` moi yeu cau cap nhat.
-`update` chi cap nhat tool setup-gateway, sau do mo lai tool.
+`update` chi cap nhat tool wj, sau do mo lai tool.
 Neu dang dung v1.1.0, chay lai lenh CMD o dau huong dan mot lan de len v1.2.0;
 tu ban nay tro di co lenh update tich hop.
 
@@ -97,8 +115,8 @@ Linux: `all` van cai cac app ho tro, nhung bao loi rieng cho hai IDE can tai tay
 Orca AppImage can FUSE; neu thieu, thu `orca-ide --appimage-extract-and-run`.
 
 Orca lay tu upstream chinh thuc `stablyai/orca`; fork `wisjoycomm/orca` chua co
-release bo cai. File release Orca/setup-gateway duoc kiem tra SHA-256 va cache
-trong thu muc user-cache cua he dieu hanh, muc `setup-gateway/downloads`.
+release bo cai. File release Orca/wj duoc kiem tra SHA-256 va cache
+trong thu muc user-cache cua he dieu hanh, muc `wj/downloads`.
 Thu lai se dung file cache neu hash dung. Installer cac hang/WinGet/Homebrew
 tu quan ly download/cache cua chung. Ban bootstrap Windows cung khong tai lai
 binary neu may da co dung hash cua release.
@@ -106,29 +124,29 @@ binary neu may da co dung hash cua release.
 ### Dang nhap theo tung ung dung
 
 ```text
-setup-gateway configure claude
-setup-gateway configure codex
-setup-gateway configure opencode
-setup-gateway configure cursor
-setup-gateway configure orca
+wj configure claude
+wj configure codex
+wj configure opencode
+wj configure cursor
+wj configure orca
 ```
 
 Claude van co OAuth `sk-ant-oat`, API key, gateway, login. Token Claude khong
 dung thay API key cua Codex/OpenCode. Codex co cac cach sau:
 
 ```text
-setup-gateway configure codex -auth login
-setup-gateway configure codex -auth login -device-auth
-setup-gateway configure codex -auth api-key
-setup-gateway configure codex -auth gateway -base-url https://example.com -models MODEL_THAT
+wj configure codex -auth login
+wj configure codex -auth login -device-auth
+wj configure codex -auth api-key
+wj configure codex -auth gateway -base-url https://example.com -models MODEL_THAT
 ```
 
 Nhap key o prompt an. API key OpenAI di vao `codex login --with-api-key` qua stdin.
 Gateway Codex phai ho tro `/v1/responses`; thay `MODEL_THAT` bang ID gateway cap.
 Gateway: tool lay TAT CA model cua gateway dua vao `/model` cua Codex (GPT moi
-nhat dung dau, lam mac dinh), ghi o `~/.codex/setup-gateway-models.json`. Chay lai
+nhat dung dau, lam mac dinh), ghi o `~/.codex/wj-models.json`. Chay lai
 de cap nhat khi gateway them model. Dung lai gateway da luu cho Claude, khoi nhap key:
-`setup-gateway configure codex -from-profile adnx` (OpenCode cung vay).
+`wj configure codex -from-profile adnx` (OpenCode cung vay).
 Claude qua gateway: tool gan Opus/Sonnet/Haiku/Fable ban moi nhat va bat
 `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` de `/model` hien du model gateway.
 
@@ -140,10 +158,10 @@ anh huong khi ban tu mo Codex ben ngoai tool.
 OpenCode:
 
 ```text
-setup-gateway configure opencode -auth login
-setup-gateway configure opencode -auth api-key -provider-id openai
-setup-gateway configure opencode -auth api-key -provider-id anthropic
-setup-gateway configure opencode -auth gateway -base-url https://example.com -models MODEL_THAT
+wj configure opencode -auth login
+wj configure opencode -auth api-key -provider-id openai
+wj configure opencode -auth api-key -provider-id anthropic
+wj configure opencode -auth gateway -base-url https://example.com -models MODEL_THAT
 ```
 
 Neu gateway khong co `/v1/models`, them `-skip-check -models MODEL_THAT`.
@@ -161,25 +179,25 @@ hoac Codex da cai/cau hinh; khong co key gateway dung chung rieng cho Orca.
 Sau khi ban moi da duoc phat hanh, mo PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup
+& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/wj/releases/latest/download/install.ps1'))) -RunSetup
 ```
 
 Installer tu chon ban Windows x64/ARM64 va kiem tra SHA-256.
-File duoc cai vao `%USERPROFILE%\.local\bin\setup-gateway.exe`.
+File duoc cai vao `%USERPROFILE%\.local\bin\wj.exe`.
 Lenh tren tai ban **release da phat hanh**, khong tu build source tren nhanh Git.
 
 macOS / Linux:
 
 ```bash
-curl -fsSL https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.sh | sh
-~/.local/bin/setup-gateway
+curl -fsSL https://github.com/wisjoycomm/wj/releases/latest/download/install.sh | sh
+~/.local/bin/wj
 ```
 
 ## 3. Cai bo cong cu cua ban
 
 ```powershell
-setup-gateway tools list
-setup-gateway tools install cli
+wj tools list
+wj tools install cli
 ```
 
 | Nhom | Cong cu |
@@ -192,7 +210,7 @@ setup-gateway tools install cli
 Chon san nhom:
 
 ```powershell
-setup-gateway tools install cli -groups 1,2,4
+wj tools install cli -groups 1,2,4
 ```
 
 Tool bo qua ung dung da co, them khoi cau hinh shell co danh dau, alias, prompt,
@@ -201,7 +219,7 @@ font va mot so mac dinh Git. Mo terminal moi sau khi cai de nhan PATH/profile.
 Quan ly cua so:
 
 ```powershell
-setup-gateway tools install wm
+wj tools install wm
 ```
 
 - Windows: Komorebi + whkd, phim Alt kieu i3, workspace theo man hinh, thanh bar.
@@ -214,7 +232,7 @@ Neu dang dung GlazeWM, tool hoi rieng truoc khi go de chuyen sang Komorebi.
 ## 4. Ket noi Claude - chon dung loai key
 
 ```powershell
-setup-gateway auth
+wj auth
 ```
 
 | Ban dang co | Chon |
@@ -230,7 +248,7 @@ hoi co cai bang installer chinh thuc hay khong.
 ### OAuth / session token
 
 ```powershell
-setup-gateway auth -auth oauth -profile work -install-claude
+wj auth -auth oauth -profile work -install-claude
 ```
 
 Dan nguyen token `sk-ant-oat...` vao prompt.
@@ -244,7 +262,7 @@ Tool khong gui request de thu OAuth; Claude se kiem tra khi ban gui prompt dau t
 ### API key truc tiep
 
 ```powershell
-setup-gateway auth -auth api-key -profile api -install-claude
+wj auth -auth api-key -profile api -install-claude
 ```
 
 Nhap key Anthropic Console. Day la API usage/billing cua key do, khong phai token
@@ -253,7 +271,7 @@ goi Pro/Max. Tool ghi `ANTHROPIC_API_KEY` va dung endpoint Anthropic chinh thuc.
 ### Custom domain / gateway ADNX
 
 ```powershell
-setup-gateway auth -auth gateway -only claude -base-url https://ai.adnx.vn -profile adnx
+wj auth -auth gateway -only claude -base-url https://ai.adnx.vn -profile adnx
 ```
 
 Nhap key **do ADNX cap**. Khong dan token `sk-ant-oat` vao day.
@@ -262,13 +280,13 @@ Tool lay danh sach model, gan alias opus/sonnet/haiku/fable phu hop.
 Neu gateway yeu cau header `x-api-key`:
 
 ```powershell
-setup-gateway auth -auth gateway -only claude -base-url https://example.com -auth-header x-api-key
+wj auth -auth gateway -only claude -base-url https://example.com -auth-header x-api-key
 ```
 
 Neu gateway khong co API danh sach model:
 
 ```powershell
-setup-gateway auth -auth gateway -only claude -base-url https://example.com -skip-check -models cc/claude-opus,cc/claude-sonnet,cc/claude-haiku
+wj auth -auth gateway -only claude -base-url https://example.com -skip-check -models cc/claude-opus,cc/claude-sonnet,cc/claude-haiku
 ```
 
 Thay cac model vi du bang ID that cua gateway. Neu model khong co quyen dung,
@@ -277,14 +295,14 @@ request van co the loi du da lay duoc danh sach model.
 ### Login binh thuong
 
 ```powershell
-setup-gateway auth -auth login -install-claude
+wj auth -auth login -install-claude
 ```
 
 Tool don cau hinh key/gateway cu va mo `claude auth login --claudeai`.
 Neu chi muon chuan bi cau hinh, chua dang nhap:
 
 ```powershell
-setup-gateway auth -auth login -no-login
+wj auth -auth login -no-login
 ```
 
 ## 5. Doi giua ADNX va OAuth
@@ -292,17 +310,17 @@ setup-gateway auth -auth login -no-login
 Sau khi luu hai profile `adnx` va `work` nhu vi du tren:
 
 ```powershell
-setup-gateway -list-profiles
-setup-gateway -use-profile adnx -run
+wj -list-profiles
+wj -use-profile adnx -run
 ```
 
 Lan sau doi sang OAuth:
 
 ```powershell
-setup-gateway -use-profile work -run
+wj -use-profile work -run
 ```
 
-Profile duoc luu trong `%USERPROFILE%\.setup-gateway\profiles`.
+Profile duoc luu trong `%USERPROFILE%\.wj\profiles`.
 Khi doi, tool cap nhat settings Claude cua user, xoa key/base URL va model mapping
 cu (vi du `cc/...`), giu hooks Orca, plugin, statusLine va cac tuy chon khac.
 Tool sao luu settings truoc khi ghi.
@@ -323,7 +341,7 @@ Loi thuong gap: dat token `oat` vao `ANTHROPIC_AUTH_TOKEN` nhung van de
 De dung OAuth truc tiep:
 
 ```powershell
-setup-gateway auth -auth oauth -profile work -run
+wj auth -auth oauth -profile work -run
 ```
 
 Nhap lai token OAuth khi duoc hoi. Tool tu don URL ADNX va model `cc/...` cu.
@@ -335,33 +353,33 @@ va managed settings; chung khong nam trong file user ma tool vua cap nhat.
 
 mitmproxy dung giua Claude/Codex va gateway (vd `ai.adnx.vn`), ghi lai moi luot
 goi model: thoi gian, app, model, so token vao/ra/cache. **Khong** ghi prompt,
-cau tra loi hay API key. Log nam tai `~/.setup-gateway/proxy/usage.jsonl`.
+cau tra loi hay API key. Log nam tai `~/.wj/proxy/usage.jsonl`.
 
 **Cach 1 - mot lenh (de nhat).** Khong can cai tay gi:
 
 ```powershell
-setup-gateway proxy run claude           # thieu mitmproxy thi hoi cai (Enter = co), tu bat proxy,
-setup-gateway proxy run codex            # mo app; thoat app la proxy tu tat
-setup-gateway proxy run -yes claude      # cho script: tu cai khong hoi
+wj proxy run claude           # thieu mitmproxy thi hoi cai (Enter = co), tu bat proxy,
+wj proxy run codex            # mo app; thoat app la proxy tu tat
+wj proxy run -yes claude      # cho script: tu cai khong hoi
 ```
 
 **Cach 2 - tung buoc** (proxy chay lau, nhieu app/cua so dung chung):
 
 ```powershell
-setup-gateway proxy setup                # cai mitmproxy + tao chung chi, mot lan
-setup-gateway proxy start                # cua so 1: bat proxy, de mo
-setup-gateway proxy run claude           # cua so 2: tu dung proxy dang chay
+wj proxy setup                # cai mitmproxy + tao chung chi, mot lan
+wj proxy start                # cua so 1: bat proxy, de mo
+wj proxy run claude           # cua so 2: tu dung proxy dang chay
 ```
 
 Xem ket qua:
 
 ```powershell
-setup-gateway proxy run codex exec "..." # tham so sau ten app duoc chuyen nguyen cho app
-setup-gateway proxy usage                # ca may, moi app, 24 gio qua
-setup-gateway proxy usage -by project    # theo tung project (-by project-app, -by model)
-setup-gateway proxy usage -project remora -app codex   # loc 1 project / 1 app
-setup-gateway proxy usage -since 168h    # 7 ngay; -all = toan bo
-setup-gateway proxy status               # kiem tra mitmproxy, chung chi, cong, log
+wj proxy run codex exec "..." # tham so sau ten app duoc chuyen nguyen cho app
+wj proxy usage                # ca may, moi app, 24 gio qua
+wj proxy usage -by project    # theo tung project (-by project-app, -by model)
+wj proxy usage -project remora -app codex   # loc 1 project / 1 app
+wj proxy usage -since 168h    # 7 ngay; -all = toan bo
+wj proxy status               # kiem tra mitmproxy, chung chi, cong, log
 ```
 
 Mot log chung cho ca may va moi app (Claude, Codex, OpenCode dung chung 1 proxy
@@ -372,11 +390,11 @@ dang dung; dat tay bang `proxy run -project ten-du-an claude`.
 
 ```powershell
 cd D:\du-an\remora
-setup-gateway proxy project on      # ghi .claude\settings.local.json (git bo qua)
-setup-gateway proxy start           # cua so rieng, de mo
+wj proxy project on      # ghi .claude\settings.local.json (git bo qua)
+wj proxy start           # cua so rieng, de mo
 claude                              # hoac claude --continue / --resume: deu duoc dem
-setup-gateway proxy project list    # cac project dang bat
-setup-gateway proxy project off     # tat (chi xoa phan tool da them)
+wj proxy project list    # cac project dang bat
+wj proxy project off     # tat (chi xoa phan tool da them)
 ```
 
 Chi anh huong project do. Khi proxy tat, Claude trong project nay khong ket noi
@@ -397,17 +415,17 @@ Ket qua mau:
 - `proxy start -web` mo mitmweb (xem tung request tai http://127.0.0.1:8081).
 - Doi cong: `proxy start -port 9000` va `proxy run -port 9000 claude`.
 - Dung mitmproxy rieng cua ban (may khac/cong khac): bat no kem addon
-  `~/.setup-gateway/proxy/usage_meter.py` (tao ra sau lan `proxy start` dau tien),
+  `~/.wj/proxy/usage_meter.py` (tao ra sau lan `proxy start` dau tien),
   roi chay `proxy run -proxy http://IP:PORT -ca duong/dan/mitmproxy-ca-cert.pem claude`.
 - So token lay tu truong `usage` gateway tra ve. Gia that do gateway quyet dinh.
 
 ## 7. Xem truoc va go cai dat
 
 ```powershell
-setup-gateway tools install cli -groups 1,4 -dry-run
-setup-gateway auth -auth oauth -dry-run
-setup-gateway tools uninstall cli
-setup-gateway tools uninstall wm
+wj tools install cli -groups 1,4 -dry-run
+wj auth -auth oauth -dry-run
+wj tools uninstall cli
+wj tools uninstall wm
 ```
 
 Dry-run khong ghi file, goi mang, cai/go package hoac mo login.
@@ -428,7 +446,7 @@ go vet ./...
 .\build.ps1
 ```
 
-Lay `dist\setup-gateway-windows-amd64.zip` gui sang may moi.
+Lay `dist\wj-windows-amd64.zip` gui sang may moi.
 Dung `.\build.ps1 -All` de build them Windows ARM64, macOS va Linux.
 
 CI kiem tra Go va cu phap script; khong tu cai/go ung dung tren may test.

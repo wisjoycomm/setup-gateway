@@ -28,7 +28,7 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 	case "update":
 		return updateSelf(args[1:], out)
 	case "version", "--version", "-version":
-		fmt.Fprintln(out, "setup-gateway", strings.TrimSpace(buildVersion))
+		fmt.Fprintln(out, "wj", strings.TrimSpace(buildVersion))
 		return nil
 	case "auth":
 		return runCLI(args[1:], input, out)
@@ -36,6 +36,26 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 		return runToolkit(args[1:], input, out)
 	case "proxy":
 		return runProxy(args[1:], input, out)
+	case "check":
+		return runCheck(args[1:], out)
+	case "init":
+		return runInit(args[1:], input, out)
+	case "usage":
+		return runUsage(args[1:], out)
+	case "top":
+		return runTop(args[1:], out)
+	case "overlay":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return runOverlay(args[1:], out, home)
+	case "models":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return runModels(args[1:], input, out, home)
 	case "onboard":
 		if len(args) != 1 {
 			return errors.New("onboard chỉ chạy dạng hỏi-đáp, không nhận tham số; dùng tools hoặc auth nếu muốn chạy bằng lệnh")
@@ -69,29 +89,34 @@ func menuAnswer(input io.Reader, out io.Writer, label string) string {
 }
 
 const mainMenuText = `
-Wisjoy setup-gateway %s
+Wisjoy wj %s
 
  CÀI ĐẶT
    1. Cài máy mới (hỏi từng bước, chọn cái mình cần)
    2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
    3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
    4. Cài quản lý cửa sổ (không bắt buộc)
+  14. Setup project: rule chung + rule theo job (Unity, web...), skill Orca
  KẾT NỐI / ĐĂNG NHẬP
    5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
    6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
    7. Đổi kết nối Claude đã lưu (profile)
  KIỂM TRA
    8. Xem ứng dụng đã cài
-   9. Đo token đã dùng (qua mitmproxy)
+  15. Xem token mọi project, cập nhật liên tục (wj top)
+  16. Bật overlay token luôn nổi trên màn hình (wj overlay)
+   9. Đo token qua mitmproxy (cho app khác Claude/Codex)
+  13. Xem các agent có khớp cấu hình không (wj check)
+  17. Lấy lại danh sách model từ gateway (wj models)
  CẬP NHẬT / GỠ
   10. Cập nhật ứng dụng
-  11. Cập nhật setup-gateway
+  11. Cập nhật wj
   12. Gỡ bộ công cụ / quản lý cửa sổ
 
    h. Hướng dẫn nhanh      0. Thoát
 `
 
-const menuPrompt = "Chọn [0-12, h]"
+const menuPrompt = "Chọn [0-17, h]"
 
 func mainMenu(input io.Reader, out io.Writer) error {
 	for {
@@ -121,7 +146,7 @@ func mainMenu(input io.Reader, out io.Writer) error {
 		case "10":
 			err = appMenu("update", input, out)
 		case "11":
-			if yes(menuAnswer(input, out, "Tải bản setup-gateway mới nhất? [y/N]")) {
+			if yes(menuAnswer(input, out, "Tải bản wj mới nhất? [y/N]")) {
 				err = updateSelf(nil, out)
 			}
 		case "12":
@@ -131,10 +156,20 @@ func mainMenu(input io.Reader, out io.Writer) error {
 			case "2":
 				err = runToolkit([]string{"uninstall", "wm"}, input, out)
 			}
+		case "13":
+			err = runCheck(nil, out)
+		case "14":
+			err = initMenu(input, out)
+		case "15":
+			err = runTop(nil, out)
+		case "16":
+			err = runApp([]string{"overlay"}, input, out)
+		case "17":
+			err = runApp([]string{"models"}, input, out)
 		case "h", "?", "help":
 			err = printHelp(nil, input, out)
 		default:
-			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 12, hoặc h để xem hướng dẫn.")
+			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 17, hoặc h để xem hướng dẫn.")
 		}
 		if err != nil {
 			fmt.Fprintln(out, "Lỗi:", err)
@@ -192,7 +227,7 @@ func onboard(input io.Reader, out io.Writer) error {
 	fmt.Fprintln(out, "\nBước 4/4 - Kết nối / đăng nhập ứng dụng")
 	for {
 		if !yes(menuAnswer(input, out, "Kết nối một ứng dụng? [y/N]")) {
-			fmt.Fprintln(out, "Xong. Mở terminal mới để nhận PATH mới. Gõ setup-gateway help khi cần.")
+			fmt.Fprintln(out, "Xong. Mở terminal mới để nhận PATH mới. Gõ wj help khi cần.")
 			return nil
 		}
 		if err := configureClient(nil, input, out); err != nil {
@@ -228,7 +263,7 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		return nil
 	}
 	if len(args) < 2 {
-		return errors.New("cách dùng: setup-gateway tools install|uninstall cli|wm [-groups 1,2,4] [-dry-run]; xem: setup-gateway help tools")
+		return errors.New("cách dùng: wj tools install|uninstall cli|wm [-groups 1,2,4] [-dry-run]; xem: wj help tools")
 	}
 	action, module := args[0], args[1]
 	script, err := toolkitScript(runtime.GOOS, action, module)
@@ -246,7 +281,7 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("có tham số không hiểu; xem: setup-gateway help tools")
+		return errors.New("có tham số không hiểu; xem: wj help tools")
 	}
 	selected := splitList(*groups)
 	if len(selected) > 0 && module != "cli" {

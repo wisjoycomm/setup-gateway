@@ -35,27 +35,27 @@ const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, k
   KHÔNG ghi prompt, câu trả lời hay API key.
 
   CÁCH 1 - MỘT LỆNH (dễ nhất)
-    setup-gateway proxy run claude     tự cài mitmproxy nếu thiếu, tự bật proxy,
-    setup-gateway proxy run codex      mở app; thoát app là proxy tự tắt.
+    wj proxy run claude     tự cài mitmproxy nếu thiếu, tự bật proxy,
+    wj proxy run codex      mở app; thoát app là proxy tự tắt.
 
   CÁCH 2 - TỪNG BƯỚC (proxy chạy lâu, nhiều app dùng chung)
-    setup-gateway proxy setup          cài mitmproxy + tạo chứng chỉ (một lần)
-    setup-gateway proxy start          bật proxy, để cửa sổ này chạy
-    setup-gateway proxy run claude     ở cửa sổ khác; tự dùng proxy đang chạy
+    wj proxy setup          cài mitmproxy + tạo chứng chỉ (một lần)
+    wj proxy start          bật proxy, để cửa sổ này chạy
+    wj proxy run claude     ở cửa sổ khác; tự dùng proxy đang chạy
 
   XEM ĐÃ DÙNG BAO NHIÊU (một log chung cho cả máy, mọi app: Claude, Codex, OpenCode...)
-    setup-gateway proxy usage                  cả máy, 24 giờ qua, theo app + model
-    setup-gateway proxy usage -by project      theo từng project
-    setup-gateway proxy usage -by project-app  theo project + app
-    setup-gateway proxy usage -project remora  chỉ một project
-    setup-gateway proxy usage -app codex       chỉ một app
+    wj proxy usage                  cả máy, 24 giờ qua, theo app + model
+    wj proxy usage -by project      theo từng project
+    wj proxy usage -by project-app  theo project + app
+    wj proxy usage -project remora  chỉ một project
+    wj proxy usage -app codex       chỉ một app
     -since 168h = 7 ngày;  -all = toàn bộ
 
   PROJECT: proxy run tự lấy tên thư mục git đang đứng (vd remora).
-    Đặt tay: setup-gateway proxy run -project ten-du-an claude
+    Đặt tay: wj proxy run -project ten-du-an claude
 
   CÁCH 3 - BẬT CHO CẢ PROJECT (Claude Code; không cần gõ proxy run nữa)
-    cd vào project, rồi:  setup-gateway proxy project on
+    cd vào project, rồi:  wj proxy project on
     Sau đó cứ mở claude / claude --continue bình thường, mọi phiên đều được đếm
     (cần proxy start đang chạy). Tắt: proxy project off   Xem: proxy project list
 
@@ -70,7 +70,7 @@ const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, k
   Chỉ app mở bằng "proxy run" mới đi qua proxy. Cấu hình Claude/Codex
   không bị sửa; tắt proxy là mọi thứ trở lại như cũ.`
 
-func proxyDir(home string) string { return filepath.Join(home, ".setup-gateway", "proxy") }
+func proxyDir(home string) string { return filepath.Join(stateDir(home), "proxy") }
 
 func proxyLogPath(home string) string { return filepath.Join(proxyDir(home), "usage.jsonl") }
 
@@ -101,7 +101,7 @@ func runProxy(args []string, input io.Reader, out io.Writer) error {
 	case "status":
 		return proxyStatus(out, home)
 	}
-	return fmt.Errorf("không hiểu lệnh proxy %q; xem: setup-gateway proxy help", args[0])
+	return fmt.Errorf("không hiểu lệnh proxy %q; xem: wj proxy help", args[0])
 }
 
 func findMitm(home, tool string) string {
@@ -135,7 +135,7 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 		return err
 	}
 	if flags.NArg() != 0 || *port < 1 || *port > 65535 {
-		return errors.New("cách dùng: setup-gateway proxy start [-port 8877] [-web] [-yes] [-dry-run]")
+		return errors.New("cách dùng: wj proxy start [-port 8877] [-web] [-yes] [-dry-run]")
 	}
 	tool := "mitmdump"
 	if *web {
@@ -147,7 +147,7 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 		return nil
 	}
 	if portOpen(*port) {
-		return fmt.Errorf("cổng %d đang bận (có thể proxy đã chạy rồi); dùng -port khác hoặc xem: setup-gateway proxy status", *port)
+		return fmt.Errorf("cổng %d đang bận (có thể proxy đã chạy rồi); dùng -port khác hoặc xem: wj proxy status", *port)
 	}
 	bin, err := ensureMitm(home, tool, *assumeYes, input, out)
 	if err != nil {
@@ -161,7 +161,7 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 	if *port != defaultProxyPort {
 		portFlag = " -port " + strconv.Itoa(*port)
 	}
-	fmt.Fprintf(out, "Để cửa sổ này mở. Ở cửa sổ khác chạy: setup-gateway proxy run%s claude  (hoặc codex)\nNhấn Ctrl+C để tắt proxy.\n\n", portFlag)
+	fmt.Fprintf(out, "Để cửa sổ này mở. Ở cửa sổ khác chạy: wj proxy run%s claude  (hoặc codex)\nNhấn Ctrl+C để tắt proxy.\n\n", portFlag)
 	return runChild(command, input, out, os.Environ())
 }
 
@@ -200,7 +200,7 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 	}
 	rest := flags.Args()
 	if len(rest) == 0 {
-		return errors.New("cách dùng: setup-gateway proxy run [-project TÊN] claude|codex|opencode|LỆNH [tham số của app]")
+		return errors.New("cách dùng: wj proxy run [-project TÊN] claude|codex|opencode|LỆNH [tham số của app]")
 	}
 	proxy := *custom
 	if proxy == "" {
@@ -235,7 +235,7 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 		return nil
 	}
 	if binary == "" {
-		return fmt.Errorf("không tìm thấy %s; cài bằng: setup-gateway apps install %s", rest[0], rest[0])
+		return fmt.Errorf("không tìm thấy %s; cài bằng: wj apps install %s", rest[0], rest[0])
 	}
 	if conn, err := net.DialTimeout("tcp", u.Host, 2*time.Second); err == nil {
 		conn.Close()
@@ -250,11 +250,11 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 		defer stop()
 	}
 	if _, err := os.Stat(*ca); err != nil {
-		return fmt.Errorf("chưa có chứng chỉ %s; chạy: setup-gateway proxy setup", *ca)
+		return fmt.Errorf("chưa có chứng chỉ %s; chạy: wj proxy setup", *ca)
 	}
 	err = runChild(append([]string{binary}, rest[1:]...), input, out, proxyEnv(os.Environ(), tagged, *ca))
 	if *custom == "" {
-		fmt.Fprintln(out, "Xem token đã dùng: setup-gateway proxy usage")
+		fmt.Fprintln(out, "Xem token đã dùng: wj proxy usage")
 	}
 	return err
 }
@@ -318,11 +318,11 @@ func ensureMitm(home, tool string, assumeYes bool, input io.Reader, out io.Write
 	}
 	if !assumeYes {
 		if !interactive(input) {
-			return "", errors.New("chưa có mitmproxy; thêm -yes để tự cài, hoặc: setup-gateway apps install mitmproxy")
+			return "", errors.New("chưa có mitmproxy; thêm -yes để tự cài, hoặc: wj apps install mitmproxy")
 		}
 		answer := menuAnswer(input, out, "Máy chưa có mitmproxy. Cài ngay? [Y/n]")
 		if answer != "" && !yes(answer) {
-			return "", errors.New("đã huỷ; cài sau bằng: setup-gateway apps install mitmproxy")
+			return "", errors.New("đã huỷ; cài sau bằng: wj apps install mitmproxy")
 		}
 	}
 	fmt.Fprintln(out, "Đang cài mitmproxy...")
@@ -401,7 +401,7 @@ func proxySetup(args []string, input io.Reader, out io.Writer, home string) erro
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("cách dùng: setup-gateway proxy setup [-yes]")
+		return errors.New("cách dùng: wj proxy setup [-yes]")
 	}
 	if _, err := ensureMitm(home, "mitmdump", *assumeYes, input, out); err != nil {
 		return err
@@ -421,7 +421,7 @@ func proxySetup(args []string, input io.Reader, out io.Writer, home string) erro
 	}
 	fmt.Fprintln(out, "Proxy đã sẵn sàng:")
 	_ = proxyStatus(out, home)
-	fmt.Fprintln(out, "Dùng: setup-gateway proxy run claude   (hoặc proxy start để chạy lâu)")
+	fmt.Fprintln(out, "Dùng: wj proxy run claude   (hoặc proxy start để chạy lâu)")
 	return nil
 }
 
@@ -543,7 +543,7 @@ func proxyUsage(args []string, out io.Writer, home string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("cách dùng: setup-gateway proxy usage [-since 24h | -all] [-by app|project|project-app|model] [-project TÊN] [-app TÊN]")
+		return errors.New("cách dùng: wj proxy usage [-since 24h | -all] [-by app|project|project-app|model] [-project TÊN] [-app TÊN]")
 	}
 	groupBy, ok := map[string][]string{
 		"app":         {"client", "model"},
@@ -634,14 +634,14 @@ func proxyStatus(out io.Writer, home string) error {
 		fmt.Fprintln(out, " ", mark, text)
 	}
 	bin := findMitm(home, "mitmdump")
-	check(bin != "", "mitmproxy: "+bin, "mitmproxy chưa cài -> setup-gateway proxy setup (hoặc cứ chạy proxy run claude, tool tự cài)")
+	check(bin != "", "mitmproxy: "+bin, "mitmproxy chưa cài -> wj proxy setup (hoặc cứ chạy proxy run claude, tool tự cài)")
 	_, err := os.Stat(mitmCAPath(home))
-	check(err == nil, "chứng chỉ CA: "+mitmCAPath(home), "chưa có chứng chỉ CA -> setup-gateway proxy setup")
+	check(err == nil, "chứng chỉ CA: "+mitmCAPath(home), "chưa có chứng chỉ CA -> wj proxy setup")
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", defaultProxyPort), time.Second)
 	if conn != nil {
 		conn.Close()
 	}
-	check(err == nil, fmt.Sprintf("proxy đang chạy ở 127.0.0.1:%d", defaultProxyPort), fmt.Sprintf("proxy chưa chạy ở cổng %d -> setup-gateway proxy start", defaultProxyPort))
+	check(err == nil, fmt.Sprintf("proxy đang chạy ở 127.0.0.1:%d", defaultProxyPort), fmt.Sprintf("proxy chưa chạy ở cổng %d -> wj proxy start", defaultProxyPort))
 	info, err := os.Stat(proxyLogPath(home))
 	check(err == nil, fmt.Sprintf("log: %s (%d KB)", proxyLogPath(home), sizeKB(info)), "chưa có log -> mở app bằng proxy run claude")
 	return nil
@@ -679,7 +679,7 @@ func proxyMenu(input io.Reader, out io.Writer) error {
 			return err
 		}
 		if runtime.GOOS != "windows" {
-			fmt.Fprintln(out, "Mở terminal khác và chạy: setup-gateway proxy start")
+			fmt.Fprintln(out, "Mở terminal khác và chạy: wj proxy start")
 			return nil
 		}
 		self, err := os.Executable()
@@ -687,7 +687,7 @@ func proxyMenu(input io.Reader, out io.Writer) error {
 			return err
 		}
 		fmt.Fprintln(out, "Đã mở cửa sổ proxy riêng. Đóng cửa sổ đó để tắt proxy.")
-		return exec.Command("cmd.exe", "/c", "start", "setup-gateway proxy", self, "proxy", "start").Run()
+		return exec.Command("cmd.exe", "/c", "start", "wj proxy", self, "proxy", "start").Run()
 	case "7":
 		fmt.Fprintln(out, proxyHelp)
 	case "8":

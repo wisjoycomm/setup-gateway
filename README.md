@@ -1,11 +1,15 @@
-# Wisjoy setup-gateway
+# Wisjoy wj
+
+Formerly `setup-gateway`. Existing installs keep working: the first normal run moves
+`~/.setup-gateway` to `~/.wj` and adds a `wj` command beside the old one. The
+environment variables `SETUP_GATEWAY_KEY` and `SETUP_GATEWAY_PROJECT` keep their names.
 
 One standalone CLI for setting up a development machine: the original
 **Bo_cong_cu** toolkit plus Claude, Codex, OpenCode, Cursor, Antigravity and Orca.
 Windows, macOS and Linux builds embed all toolkit scripts. No Go or Node.js is
 needed to run the downloaded executable.
 
-Vietnamese instructions: [HUONG-DAN.md](HUONG-DAN.md).
+Vietnamese instructions: [HUONG-DAN.md](HUONG-DAN.md). Short guides for each part: [docs/](docs/README.md).
 
 ## Start on a new Windows machine
 
@@ -13,26 +17,26 @@ Open **CMD** and paste this single command. It downloads and verifies the releas
 installs it into your user PATH, then opens the setup menu immediately:
 
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/wj/releases/latest/download/install.ps1'))) -RunSetup"
 ```
 
 No manual download or extraction is needed. You can also run `install.cmd` from
-a source checkout. In later terminals, run `setup-gateway` again. A terminal that
+a source checkout. In later terminals, run `wj` again. A terminal that
 was already open may need to be restarted before it sees the updated PATH.
 
 For an offline transfer of the CLI itself:
 
-Download and extract `setup-gateway-windows-amd64.zip` from GitHub Releases, then
+Download and extract `wj-windows-amd64.zip` from GitHub Releases, then
 double-click **Run-Setup.cmd**. The menu offers:
 
-- **Install**: 1 new-machine wizard, 2 missing apps (Claude, Codex, Orca, mitmproxy...), 3 command-line toolkit, 4 window manager.
+- **Install**: 1 new-machine wizard, 2 missing apps (Claude, Codex, Orca, mitmproxy...), 3 command-line toolkit, 4 window manager, 14 project setup.
 - **Connect**: 5 Claude Code (gateway / OAuth token / API key / browser login), 6 Codex, OpenCode, Cursor, Antigravity, Orca, 7 switch saved Claude profile.
-- **Check**: 8 installed apps, 9 token usage through mitmproxy.
-- **Update / remove**: 10 apps, 11 setup-gateway itself, 12 uninstall toolkit or window manager.
+- **Check**: 8 installed apps, 15 live tokens for every project, 16 token overlay, 9 token usage through mitmproxy, 13 config drift between agents, 17 refresh gateway models.
+- **Update / remove**: 10 apps, 11 wj itself, 12 uninstall toolkit or window manager.
 - `h` quick help, `0` exit.
 
-Run `setup-gateway help` for a plain-language overview, or `help claude`, `help codex`,
-`help proxy`, `help apps`, `help tools`, `help words` (glossary). Menus, prompts and
+Run `wj help` for a plain-language overview, or `help claude`, `help codex`,
+`help proxy`, `help apps`, `help tools`, `help init`, `help check`, `help words` (glossary). Menus, prompts and
 errors are in Vietnamese; on Windows the console is switched to UTF-8 while it runs.
 
 The menu returns after each operation (including an error); choose `0` to exit.
@@ -50,7 +54,7 @@ have separate prompts. A new-machine setup does not require installing every gro
 To install the CLI into your user PATH from a published release:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.ps1'))) -RunSetup
+& ([scriptblock]::Create((irm 'https://github.com/wisjoycomm/wj/releases/latest/download/install.ps1'))) -RunSetup
 ```
 
 Or download `install.ps1` and run `./install.ps1 -RunSetup`. Use `-Version vX.Y.Z`
@@ -61,8 +65,8 @@ and makes the command available in the current and future terminals.
 macOS / Linux:
 
 ```sh
-curl -fsSL https://github.com/wisjoycomm/setup-gateway/releases/latest/download/install.sh | sh
-~/.local/bin/setup-gateway
+curl -fsSL https://github.com/wisjoycomm/wj/releases/latest/download/install.sh | sh
+~/.local/bin/wj
 ```
 
 The Unix installer requires a release containing `checksums.txt`. It supports
@@ -70,17 +74,44 @@ Intel/Apple Silicon macOS and x64/ARM64 Linux. Add `~/.local/bin` to PATH if pro
 For a source checkout that has not been released yet, use the local build below;
 the public install commands fetch the latest **published** binary, not local changes.
 
+## Set up a project
+
+```text
+wj init                  ask which job this is (detected ones are suggested)
+wj init -type unity,web  choose directly
+wj init -dry-run         preview, write nothing
+```
+
+Run it anywhere inside a project; it works from the Git root. It installs the shared
+agent rules and any job rules (`unity`, `web`, `go`, `python`) into `AGENTS.md`, plus
+`CLAUDE.md`, `PLAN.md`, the Orca skills in `.claude/` and `.agents/`, Claude
+permissions and `.gitignore` entries. To add a job, add a folder under `kit/stacks/`
+and an entry in `initStacksList`.
+
+Existing files are safe. Files that already exist are kept and reported, including
+edited skills. In `AGENTS.md` only the text between `wj:begin` and `wj:end` markers
+is refreshed, and shared rules are not added to an `AGENTS.md` that wj did not
+create. `.claude/settings.json` and `.gitignore` only gain entries, and a rule you
+already set is left as it is. The Orca skill scripts need `pwsh`.
+
+## Compare agents
+
+`wj check` shows, for Claude, Codex, Antigravity, Cursor and OpenCode, whether
+each is installed, how it connects, whether it has a user-level instructions file,
+and its MCP servers and skills. It then lists what some installed agents have and
+others lack. It only reads, needs no network and prints names, never values.
+
 ## Bundled tools
 
 ### Applications and updates
 
 ```text
-setup-gateway apps list
-setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
-setup-gateway apps install all -dry-run
-setup-gateway apps update codex,orca
-setup-gateway version
-setup-gateway update
+wj apps list
+wj apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
+wj apps install all -dry-run
+wj apps update codex,orca
+wj version
+wj update
 ```
 
 | App ID | Windows | macOS | Linux |
@@ -104,13 +135,13 @@ For manual Linux desktop downloads: [Cursor](https://cursor.com/downloads) and
 
 Orca comes from [stablyai/orca](https://github.com/stablyai/orca/releases), the
 upstream referenced by the installed Orca updater. The `wisjoycomm/orca` fork
-does not currently publish installers. Orca and setup-gateway release assets
+does not currently publish installers. Orca and wj release assets
 are SHA-256 verified and cached under the OS user-cache directory in
-`setup-gateway/downloads`. Retrying reuses verified cached assets. Upstream
+`wj/downloads`. Retrying reuses verified cached assets. Upstream
 script installers and package managers manage their own downloads/caches.
 Orca's Linux AppImage needs FUSE, or use `orca-ide --appimage-extract-and-run`.
 
-`setup-gateway update` replaces this executable after checksum verification;
+`wj update` replaces this executable after checksum verification;
 restart the command to use it. A running Windows image can leave an adjacent
 `.old-<timestamp>` file, removable after the previous process exits. The
 Windows bootstrap also reuses an already installed executable with the same hash.
@@ -118,21 +149,21 @@ Windows bootstrap also reuses an already installed executable with the same hash
 ### Per-client authentication
 
 ```text
-setup-gateway configure claude
-setup-gateway configure codex
-setup-gateway configure opencode
-setup-gateway configure cursor
-setup-gateway configure orca
+wj configure claude
+wj configure codex
+wj configure opencode
+wj configure cursor
+wj configure orca
 ```
 
 Claude retains all four methods described below. Codex supports normal ChatGPT
 login, device-code login, direct OpenAI API keys, and Responses-compatible gateways:
 
 ```text
-setup-gateway configure codex -auth login
-setup-gateway configure codex -auth login -device-auth
-setup-gateway configure codex -auth api-key
-setup-gateway configure codex -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
+wj configure codex -auth login
+wj configure codex -auth login -device-auth
+wj configure codex -auth api-key
+wj configure codex -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
 ```
 
 Keys use a hidden prompt, `-key-stdin` or `SETUP_GATEWAY_KEY`. Codex direct API
@@ -148,10 +179,10 @@ OpenCode supports its normal provider login flow, direct OpenAI/Anthropic API
 keys, and OpenAI-compatible gateways:
 
 ```text
-setup-gateway configure opencode -auth login
-setup-gateway configure opencode -auth api-key -provider-id openai
-setup-gateway configure opencode -auth api-key -provider-id anthropic
-setup-gateway configure opencode -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
+wj configure opencode -auth login
+wj configure opencode -auth api-key -provider-id openai
+wj configure opencode -auth api-key -provider-id anthropic
+wj configure opencode -auth gateway -base-url https://example.com -models YOUR_MODEL_ID
 ```
 
 OpenCode uses the current `provider`, `npm` and `options` schema, merges existing
@@ -174,15 +205,15 @@ Official references: [Codex installation](https://developers.openai.com/codex/cl
 ### Original Bo_cong_cu modules
 
 ```text
-setup-gateway
-setup-gateway onboard
-setup-gateway tools list
-setup-gateway tools install cli
-setup-gateway tools install cli -groups 1,2,4
-setup-gateway tools install wm
-setup-gateway tools install wm -dry-run
-setup-gateway tools uninstall cli
-setup-gateway tools uninstall wm
+wj
+wj onboard
+wj tools list
+wj tools install cli
+wj tools install cli -groups 1,2,4
+wj tools install wm
+wj tools install wm -dry-run
+wj tools uninstall cli
+wj tools uninstall wm
 ```
 
 | Group | Contents |
@@ -205,7 +236,7 @@ configuration cleanup when you want to retain those applications.
 
 ## Claude: four authentication methods
 
-Run `setup-gateway auth` for a guided choice. The wizard detects missing Claude
+Run `wj auth` for a guided choice. The wizard detects missing Claude
 Code and offers its official installer. For flag-based setup, add
 `-install-claude` to install it if missing. Git for Windows is optional; installing
 the toolkit's development/agent group provides it.
@@ -225,7 +256,7 @@ The CLI rejects that mistake before sending a request.
 ### OAuth token, no browser login
 
 ```text
-setup-gateway auth -auth oauth -install-claude -profile work
+wj auth -auth oauth -install-claude -profile work
 ```
 
 Paste the full `sk-ant-oat...` token at the hidden prompt. You do not need to run
@@ -238,7 +269,7 @@ its remaining lifetime.
 ### Direct Anthropic API key
 
 ```text
-setup-gateway auth -auth api-key -install-claude -profile direct-api
+wj auth -auth api-key -install-claude -profile direct-api
 ```
 
 Uses the official Anthropic endpoint and `x-api-key`. Model discovery validates
@@ -247,7 +278,7 @@ access without generating a completion. Use `-skip-check` to configure offline.
 ### Custom gateway/domain
 
 ```text
-setup-gateway auth -auth gateway -only claude -base-url https://ai.adnx.vn -profile adnx
+wj auth -auth gateway -only claude -base-url https://ai.adnx.vn -profile adnx
 ```
 
 Enter a key issued by **that gateway**, not the OAuth token. A bare domain,
@@ -257,13 +288,13 @@ localhost development endpoints. Path prefixes such as `/proxy/v1` are retained.
 If the gateway expects `x-api-key` instead of `Authorization: Bearer`:
 
 ```text
-setup-gateway auth -auth gateway -only claude -base-url https://example.com -auth-header x-api-key
+wj auth -auth gateway -only claude -base-url https://example.com -auth-header x-api-key
 ```
 
 A gateway without model discovery can be configured with explicit model IDs:
 
 ```text
-setup-gateway auth -auth gateway -only claude -base-url https://example.com -skip-check -models cc/claude-opus,cc/claude-sonnet,cc/claude-haiku
+wj auth -auth gateway -only claude -base-url https://example.com -skip-check -models cc/claude-opus,cc/claude-sonnet,cc/claude-haiku
 ```
 
 Use the actual IDs from your gateway; the example IDs are placeholders. Explicit
@@ -273,25 +304,25 @@ it does not prove that every advertised model can answer a generation request.
 ### Normal browser login
 
 ```text
-setup-gateway auth -auth login -install-claude
+wj auth -auth login -install-claude
 ```
 
 To prepare configuration without opening the browser yet:
 
 ```text
-setup-gateway auth -auth login -no-login
+wj auth -auth login -no-login
 claude auth login --claudeai
 ```
 
 ## Save and switch connections
 
 ```text
-setup-gateway -list-profiles
-setup-gateway -use-profile adnx
-setup-gateway -use-profile work -run
+wj -list-profiles
+wj -use-profile adnx
+wj -use-profile work -run
 ```
 
-Profiles live in `~/.setup-gateway/profiles/`. Saving a profile also activates it.
+Profiles live in `~/.wj/profiles/`. Saving a profile also activates it.
 Activation updates the user Claude settings (`CLAUDE_CONFIG_DIR` is respected),
 removes previous auth variables and gateway model aliases such as `cc/...`, then
 writes only the selected connection. Hooks, plugins, status line, permissions,
@@ -314,8 +345,8 @@ Managed organizational policies continue to apply.
 The original flag-based invocation remains supported:
 
 ```text
-setup-gateway -base-url https://example.com -only claude,codex,opencode,cursor
-setup-gateway -base-url https://example.com -provider-id mygw
+wj -base-url https://example.com -only claude,codex,opencode,cursor
+wj -base-url https://example.com -provider-id mygw
 ```
 
 The second command defaults to the original client list. In the interactive menu,
@@ -332,22 +363,28 @@ Antigravity CLI has no supported custom endpoint and is reported as skipped.
 | OpenCode | `~/.config/opencode/opencode.json` or existing `.jsonc`; provider options and models |
 | Cursor | Manual instructions for Settings > Models; no global environment writes |
 
+## Token usage from session files
+
+`wj usage`, `wj top` and `wj overlay` (Windows) read Claude Code and Codex session files,
+so they need no proxy or network. See [docs/token.md](docs/token.md).
+Gateway model refresh and probing: [docs/model.md](docs/model.md).
+
 ## Token usage through mitmproxy
 
 ```text
 # One command: installs mitmproxy if missing (asks; -yes for scripts), starts a
 # private proxy, runs the app, stops the proxy when the app exits.
-setup-gateway proxy run claude         # also codex, opencode or any command
+wj proxy run claude         # also codex, opencode or any command
 
 # Step by step: a long-running proxy shared by several terminals.
-setup-gateway proxy setup              # install mitmproxy and create its CA once
-setup-gateway proxy start              # terminal 1, keep open (-web for mitmweb, -port N)
-setup-gateway proxy run claude         # terminal 2; reuses the running proxy
+wj proxy setup              # install mitmproxy and create its CA once
+wj proxy start              # terminal 1, keep open (-web for mitmweb, -port N)
+wj proxy run claude         # terminal 2; reuses the running proxy
 
-setup-gateway proxy usage              # whole machine, all apps, last 24h; -since 168h, -all
-setup-gateway proxy usage -by project  # per project; also -by project-app, -by model
-setup-gateway proxy usage -project remora -app codex
-setup-gateway proxy status
+wj proxy usage              # whole machine, all apps, last 24h; -since 168h, -all
+wj proxy usage -by project  # per project; also -by project-app, -by model
+wj proxy usage -project remora -app codex
+wj proxy status
 ```
 
 One log covers the whole machine and every client. Each call is tagged with a
@@ -355,7 +392,7 @@ project: `proxy run` uses the git repository folder name (override with
 `-project NAME`). The tag travels as the proxy URL user name, so Claude, Codex
 and OpenCode sharing one `proxy start` instance are still told apart.
 
-**Per-project mode (Claude Code).** In a project folder, `setup-gateway proxy
+**Per-project mode (Claude Code).** In a project folder, `wj proxy
 project on` writes `HTTPS_PROXY` (tagged with the project), `NODE_EXTRA_CA_CERTS`
 and `NO_PROXY` into that project's `.claude/settings.local.json` and makes sure it
 is gitignored. Every Claude session started there, including `--continue` and
@@ -364,25 +401,25 @@ is gitignored. Every Claude session started there, including `--continue` and
 enabled projects. Codex ignores `model_provider`/`profile` in project-local
 config, so it is not covered by this mode; use `proxy run codex`.
 
-`setup-gateway apps install mitmproxy` still works if you'd rather install it yourself.
+`wj apps install mitmproxy` still works if you'd rather install it yourself.
 
 `proxy start` runs mitmdump on 127.0.0.1 with an embedded addon that appends one
-JSON line per model call to `~/.setup-gateway/proxy/usage.jsonl`: time, project,
+JSON line per model call to `~/.wj/proxy/usage.jsonl`: time, project,
 client, host, model, HTTP status and input/output/cache token counts from the response
 `usage` field (Anthropic Messages, OpenAI Responses and Chat Completions, JSON or
 SSE, plus Responses over WebSocket). Prompts, responses and headers are not logged.
 `proxy run` sets `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` and `CODEX_CA_CERTIFICATE`
 for that child process only; client configuration and the user environment are
 not changed. To use your own mitmproxy instance, load
-`~/.setup-gateway/proxy/usage_meter.py` with `-s` and run
+`~/.wj/proxy/usage_meter.py` with `-s` and run
 `proxy run -proxy http://HOST:PORT -ca CA.pem claude`.
 
 ## Preview, credentials and backups
 
 ```text
-setup-gateway auth -auth oauth -dry-run
-setup-gateway auth -auth gateway -only claude -base-url https://example.com -dry-run
-setup-gateway tools install cli -groups 1,4 -dry-run
+wj auth -auth oauth -dry-run
+wj auth -auth gateway -only claude -base-url https://example.com -dry-run
+wj tools install cli -groups 1,4 -dry-run
 ```
 
 Dry runs do not write files, contact endpoints, install anything or launch login.
@@ -405,7 +442,7 @@ Use the Go version declared in `go.mod` (currently Go 1.27.1):
 ```sh
 go test ./...
 go vet ./...
-go build -o setup-gateway .
+go build -o wj .
 ```
 
 On Windows, build a portable ZIP containing the executable, launcher and README:

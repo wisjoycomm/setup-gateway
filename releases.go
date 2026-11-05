@@ -178,7 +178,7 @@ func releaseDownload(repo, name string, out io.Writer) (string, releaseInfo, err
 		return "", release, err
 	}
 	fmt.Fprintf(out, "Release %s / %s (SHA-256 verified; cached downloads reused)\n", release.Tag, asset.Name)
-	path, err := cachedAsset(asset, hash, filepath.Join(cache, "setup-gateway", "downloads"))
+	path, err := cachedAsset(asset, hash, filepath.Join(cache, "wj", "downloads"))
 	return path, release, err
 }
 
@@ -215,12 +215,12 @@ func installOrca(plan installPlan, input io.Reader, out io.Writer) error {
 
 func selfAsset(platform, arch string) string {
 	if platform == "windows" && arch == "amd64" {
-		return "setup-gateway.exe"
+		return "wj.exe"
 	}
 	if platform == "darwin" {
 		platform = "macos"
 	}
-	name := "setup-gateway-" + platform + "-" + arch
+	name := "wj-" + platform + "-" + arch
 	if platform == "windows" {
 		name += ".exe"
 	}
@@ -276,13 +276,13 @@ func replaceExecutable(source, dest string) error {
 
 func updateSelf(args []string, out io.Writer) error {
 	if len(args) > 1 || len(args) == 1 && args[0] != "-dry-run" {
-		return errors.New("usage: setup-gateway update [-dry-run]")
+		return errors.New("usage: wj update [-dry-run]")
 	}
 	if len(args) == 1 {
-		fmt.Fprintln(out, "Would fetch the latest wisjoycomm/setup-gateway release, verify SHA-256 and replace this executable.")
+		fmt.Fprintln(out, "Would fetch the latest wisjoycomm/wj release, verify SHA-256 and replace this executable.")
 		return nil
 	}
-	path, release, err := releaseDownload("wisjoycomm/setup-gateway", selfAsset(runtime.GOOS, runtime.GOARCH), out)
+	path, release, err := releaseDownload("wisjoycomm/wj", selfAsset(runtime.GOOS, runtime.GOARCH), out)
 	if err != nil {
 		return err
 	}
@@ -303,6 +303,6 @@ func updateSelf(args []string, out io.Writer) error {
 	if err = replaceExecutable(path, dest); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "Updated to", release.Tag, "- restart setup-gateway to use the new version.")
+	fmt.Fprintln(out, "Updated to", release.Tag, "- restart wj to use the new version.")
 	return nil
 }

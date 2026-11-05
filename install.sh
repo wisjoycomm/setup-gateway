@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-repo="wisjoycomm/setup-gateway"
+repo="wisjoycomm/wj"
 version="latest"
 run_setup=0
 while [ "$#" -gt 0 ]; do
@@ -13,10 +13,10 @@ done
 os=$(uname -s)
 arch=$(uname -m)
 case "$os-$arch" in
-    Darwin-arm64) file="setup-gateway-macos-arm64" ;;
-    Darwin-x86_64) file="setup-gateway-macos-amd64" ;;
-    Linux-x86_64) file="setup-gateway-linux-amd64" ;;
-    Linux-aarch64|Linux-arm64) file="setup-gateway-linux-arm64" ;;
+    Darwin-arm64) file="wj-macos-arm64" ;;
+    Darwin-x86_64) file="wj-macos-amd64" ;;
+    Linux-x86_64) file="wj-linux-amd64" ;;
+    Linux-aarch64|Linux-arm64) file="wj-linux-arm64" ;;
     *) echo "No build for $os $arch" >&2; exit 1 ;;
 esac
 if [ "$version" = latest ]; then
@@ -27,8 +27,8 @@ case "$version" in *[!a-zA-Z0-9._-]*|"") echo "Invalid release tag" >&2; exit 1 
 base="https://github.com/$repo/releases/download/$version"
 dir="$HOME/.local/bin"
 mkdir -p "$dir"
-download=$(mktemp "$dir/.setup-gateway.XXXXXX")
-checksums=$(mktemp "$dir/.setup-gateway-checksums.XXXXXX")
+download=$(mktemp "$dir/.wj.XXXXXX")
+checksums=$(mktemp "$dir/.wj-checksums.XXXXXX")
 trap 'rm -f "$download" "$checksums"' EXIT HUP INT TERM
 curl -fsSL "$base/$file" -o "$download"
 curl -fsSL "$base/checksums.txt" -o "$checksums"
@@ -46,11 +46,11 @@ if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
     exit 1
 fi
 chmod 755 "$download"
-mv -f "$download" "$dir/setup-gateway"
-echo "Installed $version: $dir/setup-gateway (SHA-256 verified)"
+mv -f "$download" "$dir/wj"
+echo "Installed $version: $dir/wj (SHA-256 verified)"
 case ":$PATH:" in
     *":$dir:"*) ;;
     *) echo "Add to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
-echo "Run setup-gateway to choose OAuth token, API key, custom gateway, or browser login."
-if [ "$run_setup" -eq 1 ]; then "$dir/setup-gateway" < /dev/tty; fi
+echo "Run wj to choose OAuth token, API key, custom gateway, or browser login."
+if [ "$run_setup" -eq 1 ]; then "$dir/wj" < /dev/tty; fi

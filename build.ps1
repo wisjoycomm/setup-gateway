@@ -7,14 +7,14 @@ $savedOS = $env:GOOS
 $savedArch = $env:GOARCH
 $savedCGO = $env:CGO_ENABLED
 try {
-    $targets = @(@{ OS='windows'; Arch='amd64'; Name='setup-gateway.exe' })
+    $targets = @(@{ OS='windows'; Arch='amd64'; Name='wj.exe' })
     if ($All) {
         $targets += @(
-            @{ OS='windows'; Arch='arm64'; Name='setup-gateway-windows-arm64.exe' },
-            @{ OS='darwin'; Arch='amd64'; Name='setup-gateway-macos-amd64' },
-            @{ OS='darwin'; Arch='arm64'; Name='setup-gateway-macos-arm64' },
-            @{ OS='linux'; Arch='amd64'; Name='setup-gateway-linux-amd64' },
-            @{ OS='linux'; Arch='arm64'; Name='setup-gateway-linux-arm64' }
+            @{ OS='windows'; Arch='arm64'; Name='wj-windows-arm64.exe' },
+            @{ OS='darwin'; Arch='amd64'; Name='wj-macos-amd64' },
+            @{ OS='darwin'; Arch='arm64'; Name='wj-macos-arm64' },
+            @{ OS='linux'; Arch='amd64'; Name='wj-linux-amd64' },
+            @{ OS='linux'; Arch='arm64'; Name='wj-linux-arm64' }
         )
     }
     foreach ($target in $targets) {
@@ -25,9 +25,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Build failed: $($target.Name)" }
     }
     Copy-Item -LiteralPath (Join-Path $buildRoot 'README.md'),(Join-Path $buildRoot 'HUONG-DAN.md'),(Join-Path $buildRoot 'Run-Setup.cmd') -Destination $dist -Force
-    $zipPath = Join-Path $dist 'setup-gateway-windows-amd64.zip'
-    Compress-Archive -LiteralPath (Join-Path $dist 'setup-gateway.exe'),(Join-Path $dist 'README.md'),(Join-Path $dist 'HUONG-DAN.md'),(Join-Path $dist 'Run-Setup.cmd') -DestinationPath $zipPath -Force
-    $hashes = Get-ChildItem -LiteralPath $dist -File | Where-Object Name -Like 'setup-gateway*' | Sort-Object Name | ForEach-Object {
+    $zipPath = Join-Path $dist 'wj-windows-amd64.zip'
+    Compress-Archive -LiteralPath (Join-Path $dist 'wj.exe'),(Join-Path $dist 'README.md'),(Join-Path $dist 'HUONG-DAN.md'),(Join-Path $dist 'Run-Setup.cmd') -DestinationPath $zipPath -Force
+    $hashes = Get-ChildItem -LiteralPath $dist -File | Where-Object Name -Like 'wj*' | Sort-Object Name | ForEach-Object {
         '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
     }
     [IO.File]::WriteAllLines((Join-Path $dist 'checksums.txt'), [string[]]$hashes, [Text.UTF8Encoding]::new($false))

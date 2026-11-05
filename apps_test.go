@@ -90,7 +90,7 @@ func TestInstallerPlans(t *testing.T) {
 			t.Fatal("GNOME screen reader mistaken for Orca")
 		}
 	}
-	if selfAsset("windows", "arm64") != "setup-gateway-windows-arm64.exe" {
+	if selfAsset("windows", "arm64") != "wj-windows-arm64.exe" {
 		t.Fatal("wrong Windows ARM asset")
 	}
 }
