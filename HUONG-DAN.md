@@ -125,6 +125,13 @@ setup-gateway configure codex -auth gateway -base-url https://example.com -model
 
 Nhap key o prompt an. API key OpenAI di vao `codex login --with-api-key` qua stdin.
 Gateway Codex phai ho tro `/v1/responses`; thay `MODEL_THAT` bang ID gateway cap.
+Gateway: tool lay TAT CA model cua gateway dua vao `/model` cua Codex (GPT moi
+nhat dung dau, lam mac dinh), ghi o `~/.codex/setup-gateway-models.json`. Chay lai
+de cap nhat khi gateway them model. Dung lai gateway da luu cho Claude, khoi nhap key:
+`setup-gateway configure codex -from-profile adnx` (OpenCode cung vay).
+Claude qua gateway: tool gan Opus/Sonnet/Haiku/Fable ban moi nhat va bat
+`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` de `/model` hien du model gateway.
+
 Chuyen login se bo lua chon model/provider cu trong config user, giu project/MCP
 va cau hinh khac. File TOML duoc backup, comment/dinh dang co the thay doi.
 Bien OPENAI_BASE_URL con trong terminal hoac cau hinh project/managed van co the
@@ -350,10 +357,16 @@ Xem ket qua:
 
 ```powershell
 setup-gateway proxy run codex exec "..." # tham so sau ten app duoc chuyen nguyen cho app
-setup-gateway proxy usage                # tong token 24 gio qua
+setup-gateway proxy usage                # ca may, moi app, 24 gio qua
+setup-gateway proxy usage -by project    # theo tung project (-by project-app, -by model)
+setup-gateway proxy usage -project remora -app codex   # loc 1 project / 1 app
 setup-gateway proxy usage -since 168h    # 7 ngay; -all = toan bo
 setup-gateway proxy status               # kiem tra mitmproxy, chung chi, cong, log
 ```
+
+Mot log chung cho ca may va moi app (Claude, Codex, OpenCode dung chung 1 proxy
+van tach duoc). Moi luot goi gan ten project: `proxy run` tu lay ten thu muc git
+dang dung; dat tay bang `proxy run -project ten-du-an claude`.
 
 Ket qua mau:
 

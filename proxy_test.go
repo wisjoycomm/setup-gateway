@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -173,5 +174,142 @@ func TestAppMenuTakesNumbers(t *testing.T) {
 	ids, err := parseChoices("1 2 9", appIDs())
 	if err != nil || strings.Join(ids, ",") != "claude,codex,mitmproxy" {
 		t.Fatal(ids, err)
+	}
+}
+
+func TestUsageByProjectAndFilters(t *testing.T) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	log := strings.Join([]string{
+		`{"ts":"` + ts + `","project":"alpha","client":"claude","model":"m1","status":200,"input":10,"output":1}`,
+		`{"ts":"` + ts + `","project":"alpha","client":"codex","model":"m2","status":200,"input":20,"output":2}`,
+		`{"ts":"` + ts + `","project":"beta","client":"claude","model":"m1","status":200,"input":30,"output":3}`,
+		`{"ts":"` + ts + `","client":"claude","model":"m1","status":200,"input":40,"output":4}`,
+	}, "\n")
+	list, total, _ := summarizeUsageBy(strings.NewReader(log), usageFilter{GroupBy: []string{"project"}})
+	if len(list) != 3 || total.Input != 100 || list[0].Project != "(không rõ)" || list[0].Total != 44 {
+		t.Fatalf("by project %+v", list)
+	}
+	list, total, _ = summarizeUsageBy(strings.NewReader(log), usageFilter{Project: "ALPHA", GroupBy: []string{"client"}})
+	if len(list) != 2 || total.Input != 30 {
+		t.Fatalf("project filter %+v", list)
+	}
+	_, total, _ = summarizeUsageBy(strings.NewReader(log), usageFilter{Client: "claude", GroupBy: []string{"model"}})
+	if total.Calls != 3 {
+		t.Fatal("app filter", total)
+	}
+	var out bytes.Buffer
+	home := t.TempDir()
+	path := proxyLogPath(home)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, []byte(log), 0o600)
+	if err := proxyUsage([]string{"-by", "project-app"}, &out, home); err != nil || !strings.Contains(out.String(), "PROJECT") || !strings.Contains(out.String(), "beta") {
+		t.Fatal(err, out.String())
+	}
+	if err := proxyUsage([]string{"-by", "nope"}, &out, home); err == nil {
+		t.Fatal("bad -by accepted")
+	}
+	if !bytes.Contains(proxyAddon, []byte("def http_connect")) || !bytes.Contains(proxyAddon, []byte(`"project"`)) {
+		t.Fatal("addon does not tag projects")
+	}
+}
+
+func TestProxyRunTagsProject(t *testing.T) {
+	var out bytes.Buffer
+	if err := proxyRun([]string{"-dry-run", "-project", "alpha", "codex"}, strings.NewReader(""), &out, t.TempDir()); err != nil || !strings.Contains(out.String(), "Project: alpha") {
+		t.Fatal(err, out.String())
+	}
+	if currentProject() != "remora" && currentProject() == "" {
+		t.Fatal("empty default project")
+	}
+}
+
+func TestCodexGatewayCatalogListsEveryModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	ids := []string{"cc/claude-opus-5-5", "cx/gpt-6.1-sol", "ds/deepseek-v4-pro", "cx/gpt-5.6-luna"}
+	if _, err := applyCodexModels(home, "gateway", "https://example.com/v1", "fake-key", "cx/gpt-6.1-sol", "gw", ids, false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(codexCatalogPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(data, &catalog); err != nil || len(catalog.Models) != 4 {
+		t.Fatal(err, len(catalog.Models))
+	}
+	if catalog.Models[0]["slug"] != "cx/gpt-6.1-sol" || catalog.Models[1]["slug"] != "cx/gpt-5.6-luna" || newestModel(ids, "gpt") != "cx/gpt-6.1-sol" {
+		t.Fatal("GPT models not first", catalog.Models[0]["slug"])
+	}
+	cfg, _ := os.ReadFile(codexConfigPath(home))
+	if !strings.Contains(string(cfg), "setup-gateway-models.json") {
+		t.Fatal("catalog not wired into config.toml")
+	}
+	if _, err := applyCodex(home, "login", "", "", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = os.ReadFile(codexConfigPath(home))
+	if strings.Contains(string(cfg), "model_catalog_json") {
+		t.Fatal("login kept the gateway catalog")
+	}
+}
+
+func TestClaudeGatewayNewestModelsAndDiscovery(t *testing.T) {
+	ids := []string{"claude-fable", "cc/claude-fable-5", "cc/claude-fable-5-1", "cc/claude-opus-5-5", "cc/claude-sonnet-5-5-review"}
+	if got := newestModel(ids, "fable"); got != "cc/claude-fable-5-1" {
+		t.Fatal(got)
+	}
+	if got := newestModel(ids, "sonnet"); got != "" {
+		t.Fatal("review model chosen", got)
+	}
+	home := testHome(t)
+	p := connectionProfile{Auth: "gateway", BaseURL: "https://example.com", Credential: "k", Models: ids}
+	if _, err := applyClaude(home, p, false); err != nil {
+		t.Fatal(err)
+	}
+	root, _ := readSettings(claudeSettingsPath(home))
+	env := root["env"].(map[string]any)
+	if env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] != "1" || env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "cc/claude-fable-5-1" {
+		t.Fatalf("env %v", env)
+	}
+	if _, err := applyClaude(home, connectionProfile{Auth: "oauth", Credential: "sk-ant-oat-x"}, false); err != nil {
+		t.Fatal(err)
+	}
+	root, _ = readSettings(claudeSettingsPath(home))
+	if _, ok := root["env"].(map[string]any)["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]; ok {
+		t.Fatal("discovery flag left after leaving the gateway")
+	}
+}
+
+func TestConfigureFromSavedGatewayProfile(t *testing.T) {
+	home := testHome(t)
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	if err := saveProfile(home, "adnx", connectionProfile{Auth: "gateway", BaseURL: "https://gw.example/v1", Credential: "shared-key", Header: "bearer"}, false); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	args := []string{"-from-profile", "adnx", "-skip-check", "-models", "cx/gpt-6.1-sol,cc/claude-opus-5-5"}
+	if err := configureAPIClient("codex", args, strings.NewReader(""), &out, home); err != nil {
+		t.Fatal(err, out.String())
+	}
+	cfg, _ := os.ReadFile(codexConfigPath(home))
+	if !strings.Contains(string(cfg), "shared-key") || !strings.Contains(string(cfg), "https://gw.example/v1") || strings.Contains(out.String(), "shared-key") {
+		t.Fatal("profile key not reused or printed", string(cfg))
+	}
+	if err := configureAPIClient("codex", []string{"-from-profile", "adnx", "-auth", "api-key"}, strings.NewReader(""), &out, home); err == nil {
+		t.Fatal("from-profile with api-key accepted")
+	}
+}
+
+func TestNewestModelOrdering(t *testing.T) {
+	ids := []string{"gpt-5.6-terra", "gpt-5.6-sol", "cx/gpt-reserve", "cx/gpt-daybreak-blue-latest", "cx/gpt-6.1-sol", "cx/gpt-6-sol", "cx/gpt-6-sol[1m]", "cx/gpt-5.5-high", "cx/gpt-6.1-sol-review"}
+	if got := newestModel(ids, "gpt"); got != "cx/gpt-6.1-sol" {
+		t.Fatal(got)
+	}
+	claude := []string{"cc/claude-haiku-4-5-20251001", "cc/claude-opus-5-5", "claude-opus", "cc/claude-fable-5", "cc/claude-fable-5-1"}
+	if newestModel(claude, "opus") != "cc/claude-opus-5-5" || newestModel(claude, "fable") != "cc/claude-fable-5-1" || newestModel(claude, "haiku") != "cc/claude-haiku-4-5-20251001" {
+		t.Fatal("claude families")
 	}
 }

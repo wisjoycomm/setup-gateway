@@ -344,15 +344,22 @@ setup-gateway proxy setup              # install mitmproxy and create its CA onc
 setup-gateway proxy start              # terminal 1, keep open (-web for mitmweb, -port N)
 setup-gateway proxy run claude         # terminal 2; reuses the running proxy
 
-setup-gateway proxy usage              # last 24h; -since 168h, -all
+setup-gateway proxy usage              # whole machine, all apps, last 24h; -since 168h, -all
+setup-gateway proxy usage -by project  # per project; also -by project-app, -by model
+setup-gateway proxy usage -project remora -app codex
 setup-gateway proxy status
 ```
+
+One log covers the whole machine and every client. Each call is tagged with a
+project: `proxy run` uses the git repository folder name (override with
+`-project NAME`). The tag travels as the proxy URL user name, so Claude, Codex
+and OpenCode sharing one `proxy start` instance are still told apart.
 
 `setup-gateway apps install mitmproxy` still works if you'd rather install it yourself.
 
 `proxy start` runs mitmdump on 127.0.0.1 with an embedded addon that appends one
-JSON line per model call to `~/.setup-gateway/proxy/usage.jsonl`: time, client,
-host, model, HTTP status and input/output/cache token counts from the response
+JSON line per model call to `~/.setup-gateway/proxy/usage.jsonl`: time, project,
+client, host, model, HTTP status and input/output/cache token counts from the response
 `usage` field (Anthropic Messages, OpenAI Responses and Chat Completions, JSON or
 SSE, plus Responses over WebSocket). Prompts, responses and headers are not logged.
 `proxy run` sets `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` and `CODEX_CA_CERTIFICATE`

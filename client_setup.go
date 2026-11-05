@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -23,7 +24,65 @@ func codexConfigPath(home string) string {
 	return filepath.Join(dir, "config.toml")
 }
 
+func codexCatalogPath(home string) string {
+	return filepath.Join(filepath.Dir(codexConfigPath(home)), "setup-gateway-models.json")
+}
+
+// codexCatalog lists every gateway model in Codex's model picker. GPT models
+// (what a Responses-API agent handles best) come first, newest first; review-only
+// variants go last.
+func codexCatalog(ids []string) ([]byte, error) {
+	var gpt, other, review []string
+	for _, id := range ids {
+		low := strings.ToLower(id)
+		switch {
+		case strings.Contains(low, "review"):
+			review = append(review, id)
+		case strings.Contains(low, "gpt"):
+			gpt = append(gpt, id)
+		default:
+			other = append(other, id)
+		}
+	}
+	sort.SliceStable(gpt, func(i, j int) bool { return newerModel(gpt[i], gpt[j]) })
+	other = append(other, review...)
+	levels := []map[string]string{}
+	for _, effort := range []string{"low", "medium", "high", "xhigh"} {
+		levels = append(levels, map[string]string{"effort": effort, "description": effort})
+	}
+	var models []map[string]any
+	for i, id := range append(gpt, other...) {
+		models = append(models, map[string]any{
+			"slug": id, "display_name": id, "description": "Gateway model",
+			"visibility": "list", "supported_in_api": true, "priority": i,
+			"supported_reasoning_levels": levels, "shell_type": "unified_exec",
+			"base_instructions":            "You are Codex, a coding assistant. Follow the user instructions and repository guidance. Use available tools to inspect, edit and verify work. Report results accurately.",
+			"supports_reasoning_summaries": false, "default_reasoning_summary": "none",
+			"support_verbosity": false, "experimental_supported_tools": []string{},
+			"input_modalities":  []string{"text"},
+			"truncation_policy": map[string]any{"mode": "tokens", "limit": 10000},
+		})
+	}
+	data, err := json.MarshalIndent(map[string]any{"models": models}, "", "  ")
+	return append(data, '\n'), err
+}
+
+// defaultChatModel picks a sensible default for multi-provider clients such as
+// OpenCode: the newest Claude Opus/Sonnet, else the newest GPT.
+func defaultChatModel(ids []string) string {
+	for _, family := range []string{"opus", "sonnet", "gpt"} {
+		if model := newestModel(ids, family); model != "" {
+			return model
+		}
+	}
+	return ""
+}
+
 func applyCodex(home, auth, base, key, model, provider string, dry bool) (string, error) {
+	return applyCodexModels(home, auth, base, key, model, provider, nil, dry)
+}
+
+func applyCodexModels(home, auth, base, key, model, provider string, ids []string, dry bool) (string, error) {
 	path := codexConfigPath(home)
 	doc := map[string]any{}
 	b, err := os.ReadFile(path)
@@ -49,6 +108,20 @@ func applyCodex(home, auth, base, key, model, provider string, dry bool) (string
 		providers[provider] = map[string]any{"name": provider, "base_url": base, "wire_api": "responses", "requires_openai_auth": false, "experimental_bearer_token": key}
 		doc["model_providers"] = providers
 		doc["model_provider"] = provider
+	}
+	// A gateway's model list replaces Codex's built-in OpenAI catalog; login and
+	// direct API keys go back to the built-in catalog.
+	if auth == "gateway" && len(ids) > 0 {
+		catalog, err := codexCatalog(ids)
+		if err != nil {
+			return "", err
+		}
+		if err = writeFile(codexCatalogPath(home), string(catalog), dry); err != nil {
+			return "", err
+		}
+		doc["model_catalog_json"] = codexCatalogPath(home)
+	} else if auth != "gateway" {
+		delete(doc, "model_catalog_json")
 	}
 	data, err := toml.Marshal(doc)
 	if err != nil {
@@ -195,6 +268,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 	dry := flags.Bool("dry-run", false, "no files, network, installation or login")
 	noLogin := flags.Bool("no-login", false, "prepare normal login without starting it")
 	device := flags.Bool("device-auth", false, "Codex device-code login")
+	fromProfile := flags.String("from-profile", "", "dùng domain + key của profile gateway Claude đã lưu (vd adnx)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -204,9 +278,24 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 	if flags.NArg() != 0 {
 		return errors.New("có tham số không hiểu; xem: setup-gateway help codex")
 	}
+	if *auth == "" && *fromProfile != "" {
+		*auth = "gateway"
+	}
 	if *auth == "" {
 		fmt.Fprintf(out, "Kết nối %s - bạn đang có gì?\n  1. Tài khoản, đăng nhập trên trình duyệt  -> Đăng nhập\n  2. API key trực tiếp (OpenAI / Anthropic)  -> API key\n  3. Domain công ty (vd ai.adnx.vn) + key    -> Gateway\n", id)
 		*auth = map[string]string{"1": "login", "2": "api-key", "3": "gateway"}[menuAnswer(input, out, "Chọn [1-3]")]
+		// Offer gateways already saved for Claude so the key is not typed twice.
+		if *auth == "gateway" && *base == "" && !*keyStdin {
+			names, labels := savedGatewayProfiles(home)
+			if len(names) > 0 {
+				names, labels = append(names, ""), append(labels, "Nhập domain + key mới")
+				choice, err := pickOne(input, out, "Dùng gateway đã lưu?", names, labels, 1)
+				if err != nil {
+					return err
+				}
+				*fromProfile = choice
+			}
+		}
 	}
 	if !contains([]string{"login", "api-key", "gateway"}, *auth) {
 		return errors.New("hãy chọn 1, 2 hoặc 3 (login, api-key, gateway); token Claude không dùng cho app này")
@@ -242,7 +331,20 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		}
 	}
 	key := ""
-	if *auth != "login" {
+	if *fromProfile != "" {
+		p, err := loadProfile(home, *fromProfile)
+		if err != nil {
+			return err
+		}
+		if p.Auth != "gateway" || p.Header == "x-api-key" {
+			return fmt.Errorf("profile %q không phải gateway dùng header bearer, không dùng chung cho %s được", *fromProfile, id)
+		}
+		if *auth != "gateway" || *base != "" || *keyStdin {
+			return errors.New("-from-profile đã có domain và key; không kèm -auth khác, -base-url hay -key-stdin")
+		}
+		*base, key = p.BaseURL, p.Credential
+	}
+	if *auth != "login" && key == "" {
 		if *auth == "gateway" && *base == "" {
 			if *keyStdin {
 				return errors.New("-key-stdin cần kèm -base-url khi dùng gateway")
@@ -310,10 +412,12 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 				}
 				ids = append([]string{model}, ids...)
 			} else if id == "codex" {
-				model := pick(ids, []string{"gpt"}, nil)
+				model := newestModel(ids, "gpt")
 				if model == "" {
 					return errors.New("gateway không có model GPT; nhập tên model dùng cho Codex bằng -models")
 				}
+				ids = append([]string{model}, ids...)
+			} else if model := defaultChatModel(ids); model != "" {
 				ids = append([]string{model}, ids...)
 			}
 		}
@@ -333,7 +437,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		if len(ids) > 0 {
 			model = ids[0]
 		}
-		path, e := applyCodex(home, *auth, *base, key, model, *provider, false)
+		path, e := applyCodexModels(home, *auth, *base, key, model, *provider, splitList(strings.Join(ids, ",")), false)
 		if e != nil {
 			return e
 		}

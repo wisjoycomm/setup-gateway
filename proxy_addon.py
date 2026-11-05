@@ -1,18 +1,21 @@
 """setup-gateway usage meter for mitmproxy.
 
-Records one JSON line per model call: time, client, host, model, HTTP status
-and token counts. Request/response headers and bodies (prompts, answers,
+Records one JSON line per model call: time, project, client, host, model,
+HTTP status and token counts. Request/response headers and bodies (prompts, answers,
 API keys) are never written.
 
 Understands Anthropic Messages, OpenAI Responses and Chat Completions, both
 plain JSON and streaming (SSE), plus Responses over WebSocket (Codex).
 """
 
+import base64
+import binascii
 import json
 import logging
 import os
 import threading
 from datetime import datetime, timezone
+from urllib.parse import unquote
 
 from mitmproxy import ctx, http
 
@@ -76,9 +79,34 @@ def _absorb_bytes(state, data):
         pass
 
 
+def _project(flow):
+    # setup-gateway proxy run puts the project name in the proxy URL user part;
+    # clients send it as Proxy-Authorization on CONNECT. The password is unused.
+    auth = flow.request.headers.get("proxy-authorization", "")
+    if not auth.lower().startswith("basic "):
+        return ""
+    try:
+        user = base64.b64decode(auth[6:].strip()).decode("utf-8", "replace").split(":", 1)[0]
+    except (ValueError, binascii.Error):
+        return ""
+    return unquote(user)[:80]
+
+
 class UsageMeter:
     def load(self, loader):
         loader.add_option("usage_log", str, "", "JSONL file that receives token usage records")
+
+    def http_connect(self, flow: http.HTTPFlow):
+        project = _project(flow)
+        if project:
+            flow.client_conn.sg_project = project
+        # Accept any project tag; mitmproxy itself has no proxy auth configured.
+        flow.request.headers.pop("proxy-authorization", None)
+
+    def requestheaders(self, flow: http.HTTPFlow):
+        project = _project(flow) or getattr(flow.client_conn, "sg_project", "")
+        flow.metadata["sg_project"] = project
+        flow.request.headers.pop("proxy-authorization", None)
 
     def request(self, flow: http.HTTPFlow):
         if not _metered(flow.request.path):
@@ -157,6 +185,7 @@ class UsageMeter:
         usage = state["usage"]
         record = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "project": flow.metadata.get("sg_project") or getattr(flow.client_conn, "sg_project", "") or "",
             "client": _client(flow.request.headers.get("user-agent")),
             "host": flow.request.pretty_host,
             "path": flow.request.path.split("?", 1)[0],

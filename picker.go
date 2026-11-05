@@ -129,6 +129,17 @@ func savedProfiles(home string) (names, labels []string) {
 	return names, labels
 }
 
+// savedGatewayProfiles lists bearer gateway profiles, reusable by Codex/OpenCode.
+func savedGatewayProfiles(home string) (names, labels []string) {
+	all, allLabels := savedProfiles(home)
+	for i, name := range all {
+		if p, err := loadProfile(home, name); err == nil && p.Auth == "gateway" && p.Header != "x-api-key" {
+			names, labels = append(names, name), append(labels, allLabels[i])
+		}
+	}
+	return names, labels
+}
+
 func printOptions(out io.Writer, title string, names, labels []string, def int) {
 	if title != "" {
 		fmt.Fprintln(out, title)
