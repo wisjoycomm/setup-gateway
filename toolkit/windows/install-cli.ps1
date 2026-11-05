@@ -242,7 +242,8 @@ Write-Host ''
 Write-Host '  CAI CONG CU DONG LENH (Windows)' -ForegroundColor Cyan
 foreach ($k in $GROUPS.Keys) { Write-Host ("   {0}. {1}" -f $k, $GROUPS[$k]) }
 $pick = $env:WJ_GROUPS
-if (-not $pick) { $pick = Read-Host "`n  Chon nhom (vd: 1 2 4). Enter = tat ca" }
+if (-not $pick) { $pick = Read-Host "`n  Chon nhom (vd: 1 2 4). Enter = tat ca, 0 = huy" }
+if ($pick -match '^\s*0\s*$') { Write-Host '  Da huy, khong cai gi.'; exit 0 }
 $sel = @($pick -split '[^1-4]+' | Where-Object { $_ })
 if ($sel.Count -eq 0) { $sel = @('1', '2', '3', '4') }
 Write-Host ("  -> Cai nhom: {0}" -f ($sel -join ', ')) -ForegroundColor Green

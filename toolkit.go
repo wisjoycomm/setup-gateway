@@ -91,53 +91,75 @@ func menuAnswer(input io.Reader, out io.Writer, label string) string {
 const mainMenuText = `
 Wisjoy wj %s
 
-   1. Cài máy mới (hỏi từng bước)
+   1. Ứng dụng & môi trường (máy mới, ứng dụng, công cụ dòng lệnh)
    2. Setup project (rule, skill Orca)
    3. AI Agent (kết nối, model, xem token, kiểm tra cấu hình)
-   4. Ứng dụng (cài, cập nhật, công cụ dòng lệnh)
-   5. Cập nhật wj
+   4. Cập nhật wj
 
    h. Hướng dẫn nhanh      0. Thoát
 `
 
-const menuPrompt = "Chọn [0-5, h]"
+const menuPrompt = "Chọn [0-4, h]"
 
 type menuItem struct {
 	label string
 	run   func() error
 }
 
-// subMenu runs one choice and goes back; 0 or Enter goes back without doing anything.
+// errCancelled means the user backed out of a question with 0. Nothing has changed.
+// A menu shows itself again; a command run directly ends with it and a failing exit
+// code, so a script never mistakes a cancelled step for a finished one.
+var errCancelled = errors.New("đã huỷ")
+
+func reportMenuResult(out io.Writer, err error) {
+	switch {
+	case errors.Is(err, errCancelled):
+		fmt.Fprintln(out, "Đã huỷ.")
+	case err != nil:
+		fmt.Fprintln(out, "Lỗi:", err)
+	}
+}
+
+// subMenu stays open after each choice; 0 or Enter goes back exactly one level.
 func subMenu(title string, items []menuItem, input io.Reader, out io.Writer) error {
-	fmt.Fprintln(out, "\n"+title)
-	for i, item := range items {
-		fmt.Fprintf(out, "  %d. %s\n", i+1, item.label)
-	}
-	fmt.Fprintln(out, "  0. Quay lại")
-	answer := menuAnswer(input, out, fmt.Sprintf("Chọn [0-%d]", len(items)))
-	if answer == "" || answer == "0" {
-		return nil
-	}
-	for i, item := range items {
-		if answer == fmt.Sprint(i+1) {
-			return item.run()
+	for {
+		fmt.Fprintln(out, "\n"+title)
+		for i, item := range items {
+			fmt.Fprintf(out, "  %d. %s\n", i+1, item.label)
+		}
+		fmt.Fprintln(out, "  0. Quay lại")
+		answer := menuAnswer(input, out, fmt.Sprintf("Chọn [0-%d]", len(items)))
+		if answer == "" || answer == "0" {
+			return nil
+		}
+		found := false
+		for i, item := range items {
+			if answer == fmt.Sprint(i+1) {
+				found = true
+				reportMenuResult(out, item.run())
+			}
+		}
+		if !found {
+			fmt.Fprintln(out, "Không có mục này.")
 		}
 	}
-	fmt.Fprintln(out, "Không có mục này.")
-	return nil
 }
 
 func agentMenu(input io.Reader, out io.Writer) error {
 	return subMenu("AI Agent", []menuItem{
+		{"Xem token mọi project (wj top; cửa sổ nổi: wj overlay; chi tiết: wj usage)", func() error { return runTop(nil, out) }},
+		{"Kết nối và cấu hình agent (gateway, model, kiểm tra, đo qua mitmproxy)", func() error { return agentConfigMenu(input, out) }},
+	}, input, out)
+}
+
+func agentConfigMenu(input io.Reader, out io.Writer) error {
+	return subMenu("Kết nối và cấu hình agent", []menuItem{
 		{"Kết nối một agent (gateway, API key, đăng nhập)", func() error { return configureClient(nil, input, out) }},
 		{"Đổi sang kết nối Claude đã lưu", func() error { return pickProfile(input, out) }},
 		{"Lấy lại danh sách model từ gateway (wj models)", func() error { return runApp([]string{"models"}, input, out) }},
 		{"Thử model nào dùng được, tốn vài token (wj models test)", func() error { return runApp([]string{"models", "test"}, input, out) }},
 		{"Kiểm tra cấu hình các agent có khớp không (wj check)", func() error { return runCheck(nil, out) }},
-		{"Xem token: bảng trực tiếp mọi project (wj top)", func() error { return runTop(nil, out) }},
-		{"Xem token: overlay luôn nổi trên màn hình (wj overlay)", func() error { return runApp([]string{"overlay"}, input, out) }},
-		{"Xem token: bảng chi tiết 30 ngày (wj usage)", func() error { return runUsage([]string{"-since", "720h"}, out) }},
-		{"Xem token: đo qua mitmproxy, cho app khác Claude/Codex", func() error { return proxyMenu(input, out) }},
+		{"Đo token qua mitmproxy, cho app khác Claude/Codex", func() error { return proxyMenu(input, out) }},
 	}, input, out)
 }
 
@@ -145,7 +167,8 @@ func appsMenu(input io.Reader, out io.Writer) error {
 	tool := func(args ...string) func() error {
 		return func() error { return runToolkit(args, input, out) }
 	}
-	return subMenu("Ứng dụng", []menuItem{
+	return subMenu("Ứng dụng & môi trường", []menuItem{
+		{"Cài máy mới (hỏi từng bước)", func() error { return onboard(input, out) }},
 		{"Cài thêm ứng dụng (hiện danh sách đã cài trước khi chọn)", func() error { return appMenu("install", input, out) }},
 		{"Cập nhật ứng dụng", func() error { return appMenu("update", input, out) }},
 		{"Cài công cụ dòng lệnh (terminal, git, node, python...)", tool("install", "cli")},
@@ -163,25 +186,21 @@ func mainMenu(input io.Reader, out io.Writer) error {
 		case "", "0", "q":
 			return nil
 		case "1":
-			err = onboard(input, out)
+			err = appsMenu(input, out)
 		case "2":
 			err = initMenu(input, out)
 		case "3":
 			err = agentMenu(input, out)
 		case "4":
-			err = appsMenu(input, out)
-		case "5":
-			if yes(menuAnswer(input, out, "Tải bản wj mới nhất? [y/N]")) {
+			if yes(menuAnswer(input, out, "Tải bản wj mới nhất? [y/N, Enter = huỷ]")) {
 				err = updateSelf(nil, out)
 			}
 		case "h", "?", "help":
 			err = printHelp(nil, input, out)
 		default:
-			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 5, hoặc h để xem hướng dẫn.")
+			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 4, hoặc h để xem hướng dẫn.")
 		}
-		if err != nil {
-			fmt.Fprintln(out, "Lỗi:", err)
-		}
+		reportMenuResult(out, err)
 	}
 }
 
@@ -195,9 +214,12 @@ func appMenu(action string, input io.Reader, out io.Writer) error {
 	if err := m.run(nil, input, out); err != nil {
 		return err
 	}
-	answer := menuAnswer(input, out, "Gõ số ứng dụng, nhiều số cách nhau dấu cách (vd 1 2 8, 1-3), all = tất cả, Enter = quay lại")
+	answer := menuAnswer(input, out, "Gõ số ứng dụng, nhiều số cách nhau dấu cách (vd 1 2 8, 1-3), all = tất cả, Enter = bỏ qua, 0 = quay lại")
 	if answer == "" {
 		return nil
+	}
+	if answer == "0" {
+		return errCancelled
 	}
 	ids, err := parseChoices(answer, appIDs())
 	if err != nil {
@@ -215,32 +237,52 @@ func appIDs() []string {
 }
 
 func onboard(input io.Reader, out io.Writer) error {
-	fmt.Fprintln(out, "Cài máy mới: tool hỏi từng phần, phần nào không cần thì Enter để bỏ qua.")
+	fmt.Fprintln(out, "Cài máy mới: tool hỏi từng phần. Enter = bỏ qua phần đó, 0 = dừng và quay lại.")
+	// wants is one step's question: 0 stops the whole walk-through, not just the step.
+	wants := func(label string) (bool, error) {
+		answer := menuAnswer(input, out, label+" [y/N, Enter = bỏ qua, 0 = dừng]")
+		if answer == "0" {
+			return false, errCancelled
+		}
+		return yes(answer), nil
+	}
 	fmt.Fprintln(out, "\nBước 1/4 - Bộ công cụ dòng lệnh (terminal đẹp, git, node, python, ripgrep...)")
-	if yes(menuAnswer(input, out, "Cài không? [y/N]")) {
+	install, err := wants("Cài không?")
+	if err != nil {
+		return err
+	}
+	if install {
 		if err := runToolkit([]string{"install", "cli"}, input, out); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out, "\nBước 2/4 - Ứng dụng lập trình")
-	if err := appMenu("install", input, out); err != nil {
+	if err := appMenu("install", input, out); errors.Is(err, errCancelled) {
+		return err
+	} else if err != nil {
 		fmt.Fprintln(out, "Có ứng dụng cài chưa xong:", err)
 	}
 	fmt.Fprintln(out, "\nBước 3/4 - Quản lý cửa sổ kiểu i3 (không bắt buộc, đổi phím tắt và cách xếp cửa sổ)")
-	if yes(menuAnswer(input, out, "Cài không? [y/N]")) {
+	install, err = wants("Cài không?")
+	if err != nil {
+		return err
+	}
+	if install {
 		if err := runToolkit([]string{"install", "wm"}, input, out); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out, "\nBước 4/4 - Kết nối / đăng nhập ứng dụng")
 	for {
-		if !yes(menuAnswer(input, out, "Kết nối một ứng dụng? [y/N]")) {
+		connect, err := wants("Kết nối một ứng dụng?")
+		if err != nil {
+			return err
+		}
+		if !connect {
 			fmt.Fprintln(out, "Xong. Mở terminal mới để nhận PATH mới. Gõ wj help khi cần.")
 			return nil
 		}
-		if err := configureClient(nil, input, out); err != nil {
-			fmt.Fprintln(out, "Lỗi kết nối:", err)
-		}
+		reportMenuResult(out, configureClient(nil, input, out))
 	}
 }
 
@@ -313,7 +355,7 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, "Dry run: no extraction, package installs, configuration changes or processes.")
 		return nil
 	}
-	if !yes(menuAnswer(input, out, "Tiếp tục? [y/N]")) {
+	if !yes(menuAnswer(input, out, "Tiếp tục? [y/N, Enter = huỷ]")) {
 		fmt.Fprintln(out, "Đã huỷ.")
 		return nil
 	}

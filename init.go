@@ -84,7 +84,10 @@ func runInit(args []string, input io.Reader, out io.Writer) error {
 
 // initMenu is the numbered-menu entry: it opens from anywhere, so ask where.
 func initMenu(input io.Reader, out io.Writer) error {
-	dir := strings.Trim(menuAnswer(input, out, "Thư mục project (Enter = thư mục hiện tại)"), `"' `)
+	dir := strings.Trim(menuAnswer(input, out, "Thư mục project (Enter = thư mục hiện tại, 0 = quay lại)"), `"' `)
+	if dir == "0" {
+		return errCancelled
+	}
 	if dir == "" {
 		return runInit(nil, input, out)
 	}
@@ -113,7 +116,10 @@ func chooseStacks(types, root string, input io.Reader, out io.Writer) ([]string,
 	if len(detected) > 0 {
 		hint = "Gõ số (vd 1 3), Enter = dùng " + strings.Join(detected, ", ")
 	}
-	answer := menuAnswer(input, out, hint)
+	answer := menuAnswer(input, out, hint+", 0 = quay lại")
+	if answer == "0" {
+		return nil, errCancelled
+	}
 	if answer == "" {
 		return detected, nil
 	}

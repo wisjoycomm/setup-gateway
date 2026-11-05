@@ -619,7 +619,8 @@ setup_linux() {
     { has Hyprland || has hyprctl; } && has_hypr=1
     echo "   Tim thay: $([ $has_i3 = 1 ] && echo 'i3 ')$([ $has_hypr = 1 ] && echo 'Hyprland')$([ $has_i3$has_hypr = 00 ] && echo 'chua co i3 / Hyprland')"
     echo "   1. i3   2. Hyprland   (vd: 1 2)"
-    pick=$(ask "   Cau hinh cho cai nao? Enter = cai dang co: " WJ_WM)
+    pick=$(ask "   Cau hinh cho cai nao? Enter = cai dang co, 0 = huy: " WJ_WM)
+    case "$(printf '%s' "$pick" | tr -d '[:space:]')" in 0) echo "   Da huy, khong cau hinh gi."; return 0 ;; esac
     if [ -z "$(printf '%s' "$pick" | tr -dc '12')" ]; then
         pick=""; [ $has_i3 = 1 ] && pick="1"; [ $has_hypr = 1 ] && pick="$pick 2"
         [ -z "$pick" ] && pick="1 2"

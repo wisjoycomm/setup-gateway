@@ -169,7 +169,8 @@ G4='Coding agent: Claude Code, Codex CLI, Antigravity CLI (agy)'
 echo
 printf '\033[36m  CAI CONG CU DONG LENH (%s, %s)\033[0m\n' "$OS" "${PM:-khong ro trinh quan ly goi}"
 printf '   1. %s\n   2. %s\n   3. %s\n   4. %s\n' "$G1" "$G2" "$G3" "$G4"
-PICK=$(ask $'\n  Chon nhom (vd: 1 2 4). Enter = tat ca: ' WJ_GROUPS)
+PICK=$(ask $'\n  Chon nhom (vd: 1 2 4). Enter = tat ca, 0 = huy: ' WJ_GROUPS)
+case "$(printf '%s' "$PICK" | tr -d '[:space:]')" in 0) echo "  Da huy, khong cai gi."; exit 0 ;; esac
 SEL=$(printf '%s' "$PICK" | tr -c '1234' ' ')
 [ -z "$(printf '%s' "$SEL" | tr -d ' ')" ] && SEL="1 2 3 4"
 ok "  -> Cai nhom: $(echo $SEL)"

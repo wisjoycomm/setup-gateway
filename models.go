@@ -284,7 +284,7 @@ func runModelsTest(args []string, input io.Reader, out io.Writer, home string) e
 	if !*assume {
 		reader := bufio.NewReader(&oneByteReader{input})
 		fmt.Fprintf(out, "Sẽ gửi %d request nhỏ tới %s (%d model x 2 đường, tốn vài token mỗi request).\n", len(ids)*2, hostOf(conn.BaseURL), len(ids))
-		if !yes(prompt(reader, out, "Tiếp tục? [y/N]")) {
+		if !yes(prompt(reader, out, "Tiếp tục? [y/N, Enter = huỷ]")) {
 			return nil
 		}
 	}

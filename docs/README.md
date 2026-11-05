@@ -1,6 +1,9 @@
 # Tài liệu wj
 
-Gõ `wj` để mở menu, hoặc xem từng phần:
+Gõ `wj` để mở menu. Ở mọi câu hỏi, gõ `0` để dừng phần đang làm và quay lại menu vừa mở nó.
+Việc đã xong ở các bước trước vẫn được giữ, ví dụ phần đã cài trong Cài máy mới.
+
+Hoặc xem từng phần:
 
 | Phần | Dùng khi |
 |---|---|
