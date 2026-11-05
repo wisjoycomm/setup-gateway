@@ -54,6 +54,11 @@ const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, k
   PROJECT: proxy run tự lấy tên thư mục git đang đứng (vd remora).
     Đặt tay: setup-gateway proxy run -project ten-du-an claude
 
+  CÁCH 3 - BẬT CHO CẢ PROJECT (Claude Code; không cần gõ proxy run nữa)
+    cd vào project, rồi:  setup-gateway proxy project on
+    Sau đó cứ mở claude / claude --continue bình thường, mọi phiên đều được đếm
+    (cần proxy start đang chạy). Tắt: proxy project off   Xem: proxy project list
+
   Lệnh khác:
     proxy status               kiểm tra mitmproxy, chứng chỉ, cổng, file log
     -yes                       (setup/start/run) tự cài mitmproxy, không hỏi
@@ -91,6 +96,8 @@ func runProxy(args []string, input io.Reader, out io.Writer) error {
 		return proxySetup(args[1:], input, out, home)
 	case "usage":
 		return proxyUsage(args[1:], out, home)
+	case "project":
+		return proxyProject(args[1:], input, out, home)
 	case "status":
 		return proxyStatus(out, home)
 	}
@@ -655,8 +662,8 @@ func proxyMenu(input io.Reader, out io.Writer) error {
 		return err
 	}
 	_ = proxyStatus(out, home)
-	fmt.Fprintln(out, "\n  1. Mở Claude qua proxy (tự cài + tự bật proxy)\n  2. Mở Codex qua proxy (tự cài + tự bật proxy)\n  3. Xem token đã dùng (24 giờ)\n  4. Xem token đã dùng (7 ngày)\n  5. Cài mitmproxy + tạo chứng chỉ\n  6. Bật proxy chạy lâu (cửa sổ riêng)\n  7. Hướng dẫn\n  0. Quay lại")
-	switch menuAnswer(input, out, "Chọn [0-7]") {
+	fmt.Fprintln(out, "\n  1. Mở Claude qua proxy (tự cài + tự bật proxy)\n  2. Mở Codex qua proxy (tự cài + tự bật proxy)\n  3. Xem token đã dùng (24 giờ)\n  4. Xem token đã dùng (7 ngày)\n  5. Cài mitmproxy + tạo chứng chỉ\n  6. Bật proxy chạy lâu (cửa sổ riêng)\n  7. Hướng dẫn\n  8. Bật đo cho project hiện tại (Claude)\n  9. Xem project đang bật đo\n  0. Quay lại")
+	switch menuAnswer(input, out, "Chọn [0-9]") {
 	case "1":
 		return proxyRun([]string{"claude"}, input, out, home)
 	case "2":
@@ -683,6 +690,10 @@ func proxyMenu(input io.Reader, out io.Writer) error {
 		return exec.Command("cmd.exe", "/c", "start", "setup-gateway proxy", self, "proxy", "start").Run()
 	case "7":
 		fmt.Fprintln(out, proxyHelp)
+	case "8":
+		return projectOn(nil, out, home)
+	case "9":
+		return projectList(out, home)
 	}
 	return nil
 }

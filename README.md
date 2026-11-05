@@ -355,6 +355,15 @@ project: `proxy run` uses the git repository folder name (override with
 `-project NAME`). The tag travels as the proxy URL user name, so Claude, Codex
 and OpenCode sharing one `proxy start` instance are still told apart.
 
+**Per-project mode (Claude Code).** In a project folder, `setup-gateway proxy
+project on` writes `HTTPS_PROXY` (tagged with the project), `NODE_EXTRA_CA_CERTS`
+and `NO_PROXY` into that project's `.claude/settings.local.json` and makes sure it
+is gitignored. Every Claude session started there, including `--continue` and
+`--resume`, is then metered while `proxy start` runs; no `proxy run` needed.
+`proxy project off` removes only the keys it added; `proxy project list` shows
+enabled projects. Codex ignores `model_provider`/`profile` in project-local
+config, so it is not covered by this mode; use `proxy run codex`.
+
 `setup-gateway apps install mitmproxy` still works if you'd rather install it yourself.
 
 `proxy start` runs mitmdump on 127.0.0.1 with an embedded addon that appends one
