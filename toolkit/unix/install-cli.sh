@@ -210,6 +210,10 @@ $PKGS
 EOF
 done
 hash -r 2>/dev/null
+# Debian/Ubuntu dat ten khac. Dung link thay vi alias de script va coding agent cung goi duoc.
+has fd  || { has fdfind && ln -sf "$(command -v fdfind)" "$BIN/fd"; }
+has bat || { has batcat && ln -sf "$(command -v batcat)" "$BIN/bat"; }
+hash -r 2>/dev/null
 
 # ======================================================================
 #  CAU HINH SHELL

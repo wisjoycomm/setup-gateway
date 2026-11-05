@@ -22,3 +22,27 @@ jobs:
         with:
           go-version-file: go.mod
       - run: bash tests/unix-smoke.sh
+
+  distro:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: fedora:latest
+            prepare: dnf install -y -q git tar gzip util-linux findutils hostname
+          - image: archlinux:latest
+            prepare: pacman -Syu --noconfirm --quiet git tar gzip util-linux findutils
+          - image: opensuse/tumbleweed:latest
+            prepare: zypper -n install git tar gzip util-linux findutils curl gawk
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 30
+    steps:
+      - run: ${{ matrix.prepare }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: bash tests/unix-smoke.sh
+        env:
+          SMOKE_NAME: ${{ matrix.image }}

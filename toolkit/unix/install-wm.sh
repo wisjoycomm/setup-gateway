@@ -223,7 +223,7 @@ setup_mac() {
 
 
     if [ -d /Applications/AeroSpace.app ]; then
-        open -a AeroSpace
+        open /Applications/AeroSpace.app || warn "   Chua mo duoc AeroSpace: mo tay trong Applications"
         sleep 2
         has aerospace && aerospace reload-config >/dev/null 2>&1
     fi

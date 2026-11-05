@@ -102,6 +102,13 @@ if [ -n "$(printf '%s' "$SEL" | tr -d ' ')" ]; then
 $PKGS
 EOF
     has fc-cache && fc-cache -f >/dev/null 2>&1
+    # Link do install-cli.sh tao cho ten rieng cua Debian/Ubuntu; goi da go thi link cung het tac dung
+    case " $SEL " in *" 2 "*)
+        for pair in fd:fdfind bat:batcat; do
+            link="$HOME/.local/bin/${pair%%:*}"
+            [ -L "$link" ] && case "$(readlink "$link")" in *"/${pair##*:}") rm -f "$link" ;; esac
+        done ;;
+    esac
 fi
 say "XONG. Mo cua so terminal moi de thay thay doi."
 echo "  Ban sao file cau hinh cu: ~/.bashrc.bak-wisjoy, ~/.zshrc.bak-wisjoy"

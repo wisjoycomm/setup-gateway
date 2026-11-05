@@ -50,7 +50,23 @@ mv -f "$download" "$dir/wj"
 echo "Installed $version: $dir/wj (SHA-256 verified)"
 case ":$PATH:" in
     *":$dir:"*) ;;
-    *) echo "Add to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    *)
+        # A new terminal must find wj, as install.ps1 arranges on Windows.
+        case "${SHELL##*/}-$os" in
+            zsh-*) profile="$HOME/.zshrc" ;;
+            bash-Darwin) profile="$HOME/.bash_profile" ;;
+            bash-*) profile="$HOME/.bashrc" ;;
+            *) profile="$HOME/.profile" ;;
+        esac
+        line='export PATH="$HOME/.local/bin:$PATH"'
+        if grep -qsF "$line" "$profile"; then
+            :
+        elif printf '\n# Added by the wj installer\n%s\n' "$line" >>"$profile"; then
+            echo "Added ~/.local/bin to PATH in $profile. Open a new terminal to use wj."
+        else
+            echo "Add to your shell profile: $line"
+        fi
+        ;;
 esac
 echo "Run wj to choose OAuth token, API key, custom gateway, or browser login."
 if [ "$run_setup" -eq 1 ]; then "$dir/wj" < /dev/tty; fi
