@@ -89,11 +89,15 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		if *only == "" {
 			*only = "claude"
 			if wizard && *auth == "gateway" {
-				choice := prompt(reader, out, "Cấu hình app nào? Enter = chỉ Claude, all = Claude+Codex+OpenCode+Cursor, hoặc gõ tên cách dấu phẩy")
-				if choice == "all" {
-					*only = "claude,codex,cursor,opencode,agy"
-				} else if choice != "" {
-					*only = choice
+				clients := []string{"claude", "codex", "opencode", "cursor", "agy"}
+				printOptions(out, "Dùng gateway này cho app nào?", clients, []string{"Claude Code", "Codex CLI", "OpenCode", "Cursor (hướng dẫn)", "Antigravity (bỏ qua, không hỗ trợ gateway)"}, 1)
+				choice := prompt(reader, out, "Gõ số (vd 1 2 3), all = tất cả, Enter = chỉ Claude")
+				if choice != "" {
+					picked, err := parseChoices(choice, clients)
+					if err != nil {
+						return err
+					}
+					*only = strings.Join(picked, ",")
 				}
 			} else if *auth == "gateway" && !wizard && *profile == "" && *header != "x-api-key" {
 				// Keep the original flag-based gateway invocation compatible.

@@ -113,15 +113,7 @@ func mainMenu(input io.Reader, out io.Writer) error {
 		case "6":
 			err = configureClient(nil, input, out)
 		case "7":
-			err = runCLI([]string{"-list-profiles"}, input, out)
-			if err != nil {
-				break
-			}
-			name := menuAnswer(input, out, "Tên profile muốn dùng (Enter = quay lại)")
-			if name == "" {
-				break
-			}
-			err = runCLI([]string{"-use-profile", name}, input, out)
+			err = pickProfile(input, out)
 		case "8":
 			err = newAppManager().run(nil, input, out)
 		case "9":
@@ -160,11 +152,23 @@ func appMenu(action string, input io.Reader, out io.Writer) error {
 	if err := m.run(nil, input, out); err != nil {
 		return err
 	}
-	ids := menuAnswer(input, out, "Gõ tên ứng dụng ở cột đầu, cách nhau dấu phẩy (vd: claude,codex). all = tất cả, Enter = quay lại")
-	if ids == "" {
+	answer := menuAnswer(input, out, "Gõ số ứng dụng, nhiều số cách nhau dấu cách (vd 1 2 8, 1-3), all = tất cả, Enter = quay lại")
+	if answer == "" {
 		return nil
 	}
-	return m.run([]string{action, ids}, input, out)
+	ids, err := parseChoices(answer, appIDs())
+	if err != nil {
+		return err
+	}
+	return m.run([]string{action, strings.Join(ids, ",")}, input, out)
+}
+
+func appIDs() []string {
+	var ids []string
+	for _, app := range appCatalog {
+		ids = append(ids, app.ID)
+	}
+	return ids
 }
 
 func onboard(input io.Reader, out io.Writer) error {

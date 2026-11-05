@@ -195,12 +195,12 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 			return errors.New("apps list không nhận thêm tham số")
 		}
 		fmt.Fprintln(out, "Ứng dụng trên máy (chỉ kiểm tra tại máy, không tải gì):")
-		for _, app := range appCatalog {
+		for i, app := range appCatalog {
 			state := "chưa cài"
 			if p := m.find(app, m.home); p != "" {
 				state = "đã cài: " + p
 			}
-			fmt.Fprintf(out, "  %-17s %-19s %s\n", app.ID, app.Name, state)
+			fmt.Fprintf(out, "  %2d. %-16s %-17s %s\n", i+1, app.Name, app.ID, state)
 		}
 		return nil
 	}
