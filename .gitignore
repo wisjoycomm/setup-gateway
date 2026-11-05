@@ -6,3 +6,7 @@
 /.tmp/
 *.test
 coverage.out
+
+# wj init
+.tmp/
+.claude/settings.local.json
