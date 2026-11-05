@@ -194,6 +194,52 @@ func TestRunningProjectsDropsIdleOnes(t *testing.T) {
 	}
 }
 
+func TestParseTokenCount(t *testing.T) {
+	for text, want := range map[string]int64{"5M": 5_000_000, "500k": 500_000, "1.5G": 1_500_000_000, "20000": 20000, " 2m ": 2_000_000} {
+		if got, err := parseTokenCount(text); err != nil || got != want {
+			t.Errorf("%q = %d, %v", text, got, err)
+		}
+	}
+	for _, text := range []string{"", "M", "abc", "-5M", "0", "5T", "NaN", "Inf", "1e30"} {
+		if got, err := parseTokenCount(text); err == nil {
+			t.Errorf("%q accepted as %d", text, got)
+		}
+	}
+}
+
+func TestWarnLevel(t *testing.T) {
+	cases := []struct {
+		total, limit int64
+		want         int
+	}{{100, 0, 0}, {79, 100, 0}, {80, 100, 1}, {99, 100, 1}, {100, 100, 2}, {500, 100, 2}}
+	for _, c := range cases {
+		if got := warnLevel(c.total, c.limit); got != c.want {
+			t.Errorf("warnLevel(%d, %d) = %d", c.total, c.limit, got)
+		}
+	}
+}
+
+func TestOverlayDetailPutsRunningFirstAndKeepsTheCap(t *testing.T) {
+	named := func(names ...string) []usageRow {
+		rows := []usageRow{}
+		for _, name := range names {
+			rows = append(rows, usageRow{usageTotal: usageTotal{Project: name}})
+		}
+		return rows
+	}
+	got := overlayDetailRows(named("b"), named("a", "b", "c"))
+	if len(got) != 3 || got[0].Project != "b" || got[1].Project != "a" || got[2].Project != "c" {
+		t.Errorf("rows = %+v", got)
+	}
+	many := make([]usageRow, overlayMaxRows+5)
+	for i := range many {
+		many[i].Project = fmt.Sprint(i)
+	}
+	if got := overlayDetailRows(nil, many); len(got) != overlayMaxRows {
+		t.Errorf("cap = %d", len(got))
+	}
+}
+
 func TestOpenSessionMarkersNeedALiveProcess(t *testing.T) {
 	s, home := testScanner(t)
 	dir := filepath.Join(home, ".claude", "sessions")

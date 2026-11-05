@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -495,7 +496,18 @@ func (s *sessionScanner) machineTotals(now time.Time) string {
 func (s *sessionScanner) overlayFooter(now time.Time) string {
 	_, week := s.summarize(usageFilter{Since: now.Add(-7 * 24 * time.Hour)})
 	_, month := s.summarize(usageFilter{Since: now.Add(-30 * 24 * time.Hour)})
-	return fmt.Sprintf("7 ngày %s · 30 ngày %s", compactTokens(week.Total), compactTokens(month.Total))
+	return fmt.Sprintf("7d %s · 30d %s", compactTokens(week.Total), compactTokens(month.Total))
+}
+
+// windowTag is the shortest label for a time window, for the overlay's one-line header.
+func windowTag(d time.Duration) string {
+	if d >= 48*time.Hour && d%(24*time.Hour) == 0 {
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+	if d >= time.Hour && d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return d.String()
 }
 
 // openClaudeProjects reads Claude Code's per-process session markers, so an idle
@@ -537,6 +549,61 @@ func runningProjects(list []usageRow, open []string, now time.Time) []usageRow {
 	}
 	if len(rows) > overlayMaxRows {
 		rows = rows[:overlayMaxRows]
+	}
+	return rows
+}
+
+// parseTokenCount reads a number of tokens such as 5M, 500k, 1.5G or 20000.
+func parseTokenCount(text string) (int64, error) {
+	number := strings.TrimSpace(text)
+	scale := 1.0
+	if number != "" {
+		switch number[len(number)-1] {
+		case 'k', 'K':
+			scale = 1e3
+		case 'm', 'M':
+			scale = 1e6
+		case 'g', 'G':
+			scale = 1e9
+		}
+		if scale != 1 {
+			number = number[:len(number)-1]
+		}
+	}
+	value, err := strconv.ParseFloat(number, 64)
+	if err != nil || !(value > 0) || value*scale > 1e15 { // the negated form also rejects NaN
+		return 0, fmt.Errorf("số token không hợp lệ: %q (ví dụ: 5M, 500k, 20000)", text)
+	}
+	return int64(value * scale), nil
+}
+
+// warnLevel compares a total with a limit the user chose: 0 is fine (or no limit),
+// 1 is from 80% of the limit, 2 is at or over it.
+func warnLevel(total, limit int64) int {
+	switch {
+	case limit <= 0 || total*5 < limit*4:
+		return 0
+	case total < limit:
+		return 1
+	}
+	return 2
+}
+
+// overlayDetailRows is the expanded overlay's report: running projects first, then
+// the rest of the window, so the rows add up to the total shown above them.
+func overlayDetailRows(running, list []usageRow) []usageRow {
+	rows := append([]usageRow{}, running...)
+	seen := make([]string, 0, len(running))
+	for _, row := range running {
+		seen = append(seen, row.Project)
+	}
+	for _, row := range list {
+		if len(rows) == overlayMaxRows {
+			break
+		}
+		if !containsName(seen, row.Project) {
+			rows = append(rows, row)
+		}
 	}
 	return rows
 }

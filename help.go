@@ -159,7 +159,9 @@ một project.
                           theo 24 giờ, 7 ngày, 30 ngày, toàn bộ (Ctrl+C để thoát)
   wj top -once            in một lần
   wj overlay              cửa sổ nhỏ luôn nổi: mọi project đang mở/đang chạy và tổng cả máy;
-                          project mới tự hiện; kéo để đổi chỗ, chuột phải để đóng
+                          project mới tự hiện; bấm đúp để xem chi tiết, kéo để đổi chỗ,
+                          chuột phải để đóng
+  wj overlay -warn 5M     dòng tổng hiện 16.5M/5M, chuyển vàng từ 80% ngưỡng, đỏ khi vượt
   wj overlay stop         đóng overlay (overlay hiện chỉ có trên Windows)
   wj usage                bảng chi tiết theo project + app
   wj usage -by app        theo app + model; còn có -by project, -by model
