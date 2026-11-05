@@ -368,6 +368,21 @@ Mot log chung cho ca may va moi app (Claude, Codex, OpenCode dung chung 1 proxy
 van tach duoc). Moi luot goi gan ten project: `proxy run` tu lay ten thu muc git
 dang dung; dat tay bang `proxy run -project ten-du-an claude`.
 
+**Cach 3 - bat cho ca project (Claude Code).** Khong can go `proxy run` nua:
+
+```powershell
+cd D:\du-an\remora
+setup-gateway proxy project on      # ghi .claude\settings.local.json (git bo qua)
+setup-gateway proxy start           # cua so rieng, de mo
+claude                              # hoac claude --continue / --resume: deu duoc dem
+setup-gateway proxy project list    # cac project dang bat
+setup-gateway proxy project off     # tat (chi xoa phan tool da them)
+```
+
+Chi anh huong project do. Khi proxy tat, Claude trong project nay khong ket noi
+duoc: bat lai `proxy start` hoac `proxy project off`. Codex chua ho tro cach nay
+(Codex khong cho project tu doi proxy/provider); dung `proxy run codex`.
+
 Ket qua mau:
 
 ```text
