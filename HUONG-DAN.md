@@ -55,6 +55,8 @@ Tren Windows tool tu bat UTF-8 de hien dung tieng Viet co dau.
 Che do may moi hoi tung phan. Khong can cai het. Phan quan ly cua so la tuy chon.
 Khi cai package, Windows co the hien UAC; Homebrew/Linux co the hoi mat khau sudo.
 Menu quay lai sau moi thao tac, ke ca khi gap loi; nhan 0 de thoat.
+Moi danh sach (app, model, profile...) deu danh so: go so la chon, nhieu so cach
+nhau dau cach (vd `1 2 9`), khoang `2-4`, `all` = tat ca, Enter = mac dinh/quay lai.
 
 ### Cai mot lan, dung lai tai may
 

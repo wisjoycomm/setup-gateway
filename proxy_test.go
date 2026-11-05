@@ -131,3 +131,47 @@ func TestHelpTopicsAndAddonEmbedded(t *testing.T) {
 		}
 	}
 }
+
+func TestNumericChoices(t *testing.T) {
+	names := []string{"claude", "codex", "opencode", "cursor"}
+	for answer, want := range map[string]string{
+		"1":          "claude",
+		"1 3":        "claude,opencode",
+		"2,4":        "codex,cursor",
+		"2-4":        "codex,opencode,cursor",
+		"all":        "claude,codex,opencode,cursor",
+		"3 3 1":      "opencode,claude",
+		"codex 1":    "codex,claude",
+		"  CLAUDE  ": "claude",
+	} {
+		got, err := parseChoices(answer, names)
+		if err != nil || strings.Join(got, ",") != want {
+			t.Fatalf("%q -> %v %v, want %s", answer, got, err, want)
+		}
+	}
+	for _, bad := range []string{"0", "5", "3-9", "4-2", "nope"} {
+		if _, err := parseChoices(bad, names); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+	var out bytes.Buffer
+	if got, _ := pickOne(strings.NewReader("\n"), &out, "", names, nil, 2); got != "codex" {
+		t.Fatal("Enter did not take the default", got)
+	}
+	if got, _ := pickOne(strings.NewReader("\n"), &out, "", names, nil, 0); got != "" {
+		t.Fatal("Enter without default must go back", got)
+	}
+	if _, err := pickOne(strings.NewReader("1 2\n"), &out, "", names, nil, 0); err == nil {
+		t.Fatal("single choice accepted two")
+	}
+	if !strings.Contains(out.String(), " 2. codex") {
+		t.Fatal("options not numbered", out.String())
+	}
+}
+
+func TestAppMenuTakesNumbers(t *testing.T) {
+	ids, err := parseChoices("1 2 9", appIDs())
+	if err != nil || strings.Join(ids, ",") != "claude,codex,mitmproxy" {
+		t.Fatal(ids, err)
+	}
+}

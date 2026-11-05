@@ -144,10 +144,11 @@ func mergeObject(dest, src map[string]any) {
 
 func configureClient(args []string, input io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		fmt.Fprintln(out, "Kết nối app nào?\n  claude        Claude Code\n  codex         Codex CLI\n  opencode      OpenCode\n  cursor        Cursor editor (hướng dẫn)\n  cursor-agent  Cursor CLI (hướng dẫn)\n  antigravity   Antigravity CLI / agy (hướng dẫn)\n  orca          Orca (hướng dẫn)")
-		id := menuAnswer(input, out, "Gõ tên app (Enter = quay lại)")
-		if id == "" {
-			return nil
+		id, err := pickOne(input, out, "Kết nối app nào?",
+			[]string{"claude", "codex", "opencode", "cursor", "cursor-agent", "antigravity", "orca"},
+			[]string{"Claude Code", "Codex CLI", "OpenCode", "Cursor editor (hướng dẫn)", "Cursor CLI (hướng dẫn)", "Antigravity CLI / IDE (hướng dẫn)", "Orca (hướng dẫn)"}, 0)
+		if err != nil || id == "" {
+			return err
 		}
 		args = []string{id}
 	}
@@ -229,9 +230,11 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		if *provider == "gateway" {
 			*provider = "openai"
 			if len(args) == 0 {
-				if answer := menuAnswer(input, out, "Key của hãng nào? openai hoặc anthropic (Enter = openai)"); answer != "" {
-					*provider = answer
+				choice, err := pickOne(input, out, "Key của hãng nào?", []string{"openai", "anthropic"}, []string{"OpenAI", "Anthropic"}, 1)
+				if err != nil {
+					return err
 				}
+				*provider = choice
 			}
 		}
 		if !contains([]string{"openai", "anthropic"}, *provider) {
@@ -288,10 +291,22 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		}
 		if *models == "" && len(ids) > 0 {
 			if len(args) == 0 {
-				fmt.Fprintln(out, "Model gateway có:", strings.Join(ids, ", "))
-				model := menuAnswer(input, out, "Gõ tên model muốn dùng mặc định")
-				if model == "" {
-					return errors.New("chưa chọn model")
+				choices := ids
+				if id == "codex" {
+					// Codex speaks the Responses API: list GPT-style models first.
+					var gpt, other []string
+					for _, m := range ids {
+						if strings.Contains(strings.ToLower(m), "gpt") {
+							gpt = append(gpt, m)
+						} else {
+							other = append(other, m)
+						}
+					}
+					choices = append(gpt, other...)
+				}
+				model, err := pickOne(input, out, "Chọn model mặc định:", choices, nil, 1)
+				if err != nil {
+					return err
 				}
 				ids = append([]string{model}, ids...)
 			} else if id == "codex" {

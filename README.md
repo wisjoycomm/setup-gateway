@@ -36,6 +36,8 @@ Run `setup-gateway help` for a plain-language overview, or `help claude`, `help 
 errors are in Vietnamese; on Windows the console is switched to UTF-8 while it runs.
 
 The menu returns after each operation (including an error); choose `0` to exit.
+Every list (apps, models, profiles, clients) is numbered: type `1 2 9`, a range
+`2-4`, or `all`; names are still accepted.
 Opening it, listing applications and reading the version make no network requests.
 The executable and toolkit scripts remain on your machine. You do not clone or
 download the repository again for normal use. Installation skips detected apps;
