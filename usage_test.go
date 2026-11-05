@@ -159,7 +159,7 @@ func TestRenderTopMarksActiveProjectsFirst(t *testing.T) {
 			claudeLine("b", "/w/small-new", now.Add(-10*time.Second).Format(time.RFC3339), 900, 0, 0, 0))
 	s.scan(time.Time{})
 	list, total := s.projectStatus(time.Time{})
-	out := renderTop(list, s.modelsByProject(time.Time{}), total, "trong 24h", now, 0, 0)
+	out := renderTop(nil, list, s.modelsByProject(time.Time{}), total, "trong 24h", now, 0, 0)
 	if strings.Index(out, "small-new") > strings.Index(out, "big-old") {
 		t.Errorf("order:\n%s", out)
 	}
@@ -183,7 +183,7 @@ func TestRenderTopShowsEveryDetail(t *testing.T) {
 	}
 	total := row("", "", 5)
 
-	full := renderTop(list, models, total, "trong 24h", now, 0, 0)
+	full := renderTop(nil, list, models, total, "trong 24h", now, 0, 0)
 	for _, want := range []string{"≈USD", "LƯỢT", "a-rather-long-project-name-here", "2 model", "opus-x", "haiku-z", "sonnet-y", "$12.50", "1.0M", "2.0M", "4.0M", "7.0M"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("full view misses %q:\n%s", want, full)
@@ -191,7 +191,14 @@ func TestRenderTopShowsEveryDetail(t *testing.T) {
 	}
 
 	for _, width := range []int{80, 100, 120, 160} {
-		out := renderTop(list, models, total, "trong 24h", now, width, 0)
+		sessions := []usageRow{row("a-rather-long-project-name-here", "opus-x", 3)}
+		sessions[0].Session, sessions[0].Context = "d76ee85b-2713-4696-b01c-91a9587ce162", 80_000
+		out := renderTop(sessions, list, models, total, "trong 24h", now, width, 0)
+		for _, want := range []string{"SESSION ĐANG CHẠY", "d76ee85b", "80.0k"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("width %d misses %q:\n%s", width, want, out)
+			}
+		}
 		for _, want := range []string{"≈USD", "$12.50", "opus-x", "haiku-z", "sonnet-y", "7.0M", "single"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("width %d misses %q:\n%s", width, want, out)
@@ -205,9 +212,53 @@ func TestRenderTopShowsEveryDetail(t *testing.T) {
 	}
 
 	// A short window says what it could not fit and still fits the screen.
-	short := renderTop(list, models, total, "trong 24h", now, 80, topFrameLines+1)
-	if !strings.Contains(short, "còn 1 project") || strings.Contains(short, "single") {
+	short := renderTop(nil, list, models, total, "trong 24h", now, 80, topFrameLines+1)
+	if !strings.Contains(short, "1 project") || strings.Contains(short, "single") {
 		t.Errorf("short view:\n%s", short)
+	}
+}
+
+func TestRunningSessionsCountTheWholeSession(t *testing.T) {
+	s, home := testScanner(t)
+	now := time.Now().UTC()
+	stamp := func(age time.Duration) string { return now.Add(-age).Format(time.RFC3339) }
+	line := func(id, session string, sidechain bool, age time.Duration, input, read int) string {
+		return fmt.Sprintf(`{"type":"assistant","cwd":"/w/game","timestamp":%q,"sessionId":%q,"isSidechain":%t,"message":{"id":%q,"model":"claude-x","usage":{"input_tokens":%d,"output_tokens":10,"cache_read_input_tokens":%d,"cache_creation_input_tokens":0}}}`+"\n",
+			stamp(age), session, sidechain, id, input, read)
+	}
+	// Started three days ago and still running; a subagent's call counts in the total,
+	// not in the context; the other session ended long ago.
+	writeTestFile(t, filepath.Join(home, ".claude", "projects", "p", "live.jsonl"),
+		line("a", "live", false, 72*time.Hour, 100, 1_000)+
+			line("b", "live", false, time.Minute, 200, 5_000)+
+			line("c", "live", true, 10*time.Second, 7, 90_000))
+	writeTestFile(t, filepath.Join(home, ".claude", "projects", "p", "old.jsonl"),
+		line("d", "old", false, 48*time.Hour, 100, 0))
+	s.scan(time.Time{})
+	got := s.runningSessions(now)
+	if len(got) != 1 || got[0].Session != "live" {
+		t.Fatalf("sessions = %+v", got)
+	}
+	if got[0].Calls != 3 || got[0].Context != 5_200 || got[0].Total != 96_337 {
+		t.Errorf("live = calls %d context %d total %d", got[0].Calls, got[0].Context, got[0].Total)
+	}
+}
+
+func TestOpenSessionWithoutCallsStillShows(t *testing.T) {
+	s, home := testScanner(t)
+	writeTestFile(t, filepath.Join(home, ".claude", "sessions", "1.json"),
+		fmt.Sprintf(`{"pid":%d,"cwd":"/w/game","sessionId":"fresh-id","name":"my session"}`, os.Getpid()))
+	s.scan(time.Time{})
+	got := s.runningSessions(time.Now())
+	if len(got) != 1 || got[0].Session != "fresh-id" || sessionLabel(got[0]) != "my session" || lastSeenText(got[0].Last, time.Now()) != "đang mở" {
+		t.Errorf("sessions = %+v", got)
+	}
+}
+
+func TestSessionIDOfCodexRollout(t *testing.T) {
+	got := sessionIDOf(filepath.Join("x", "rollout-2026-11-05T10-00-00-019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b.jsonl"))
+	if got != "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b" {
+		t.Errorf("id = %q", got)
 	}
 }
 

@@ -128,7 +128,7 @@ for model in claude-opus-4-5 claude-haiku-4-5; do
 done
 sh_step "wj top -once đủ chi tiết" '
     "$wj" top -once | tee "$work/top.out"
-    for want in smoke-project "2 model" claude-opus-4-5 claude-haiku-4-5 "≈USD" "Cả máy"; do
+    for want in "SESSION ĐANG CHẠY" smoke-project "2 model" claude-opus-4-5 claude-haiku-4-5 "≈USD" "Cả máy"; do
         grep -q "$want" "$work/top.out" || { echo "thiếu: $want"; exit 1; }
     done'
 sh_step "wj top trực tiếp trong terminal 80 cột, Ctrl+C thoát" '

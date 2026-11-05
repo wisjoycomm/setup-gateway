@@ -323,13 +323,17 @@ func overlayFeed(window time.Duration, home string, hwnd uintptr) {
 		if len(running) == 0 {
 			lines = append(lines, overlayLine{Project: "Không có project đang chạy"})
 		}
+		sessions := scanner.runningSessions(now)
 		for _, row := range running {
 			lines = append(lines, overlayLine{Project: cutRunes(row.Project, 18), Tokens: compactTokens(row.Total), Active: now.Sub(row.Last) < activeWindow})
+			for _, session := range sessions {
+				if session.Project == row.Project && len(lines) < overlayMaxLines {
+					lines = append(lines, overlayLine{Project: "  " + sessionLabel(session), Tokens: compactTokens(session.Total),
+						Active: !session.Last.IsZero() && now.Sub(session.Last) < activeWindow})
+				}
+			}
 		}
-		var detail []overlayLine
-		for _, entry := range overlayDetailEntries(overlayDetailRows(running, list), scanner.modelsByProject(since)) {
-			detail = append(detail, overlayDetailLine(entry, now))
-		}
+		detail := overlayDetailLines(overlayDetailEntries(overlayDetailRows(running, list), scanner.modelsByProject(since)), sessions, now)
 		whole := scanner.machineTotals(now)
 		whole += fmt.Sprintf(" · %s ≈%s theo giá API %s", windowTag(window), costText(total), pricesAsOf)
 		shown := compactTokens(total.Total)
@@ -345,16 +349,34 @@ func overlayFeed(window time.Duration, home string, hwnd uintptr) {
 	}
 }
 
-func overlayDetailLine(row overlayDetailEntry, now time.Time) overlayLine {
-	ago := "đang mở"
-	if !row.Last.IsZero() {
-		ago = agoText(now.Sub(row.Last))
+// overlayDetailLines puts each project's running sessions after its model lines. Unlike
+// the rest of the report they count the whole session, and also say the context size.
+func overlayDetailLines(entries []overlayDetailEntry, sessions []usageRow, now time.Time) []overlayLine {
+	lines := make([]overlayLine, 0, len(entries))
+	for i, entry := range entries {
+		lines = append(lines, overlayDetailLine(entry, now))
+		if i+1 < len(entries) && entries[i+1].Sub {
+			continue
+		}
+		for _, session := range sessions {
+			if session.Project == entry.Project {
+				line := overlayDetailLine(overlayDetailEntry{usageRow: session, Sub: true}, now)
+				line.Project = "  " + sessionLabel(session) + " · context " + compactTokens(session.Context)
+				line.Detail[2] = cutRunes(session.LastModel, 20)
+				line.Active = !session.Last.IsZero() && now.Sub(session.Last) < activeWindow
+				lines = append(lines, line)
+			}
+		}
 	}
+	return lines
+}
+
+func overlayDetailLine(row overlayDetailEntry, now time.Time) overlayLine {
 	line := overlayLine{
 		Tokens: compactTokens(row.Total),
 		Cost:   costText(row.usageRow),
 		Detail: []string{
-			strings.Join(row.Apps, "+"), ago, cutRunes(row.LastModel, 20),
+			strings.Join(row.Apps, "+"), lastSeenText(row.Last, now), cutRunes(row.LastModel, 20),
 			compactTokens(row.Input), compactTokens(row.Output), compactTokens(row.CacheRead + row.CacheWrite),
 		},
 	}

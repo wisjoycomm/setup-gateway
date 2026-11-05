@@ -26,6 +26,17 @@ wj usage -project game -app codex
 Cả máy: 24 giờ 7.7M · 7 ngày 173.6M · 30 ngày 812.1M · toàn bộ 986.3M
 ```
 
+## Session đang chạy
+
+`wj top` có bảng riêng cho các session đang chạy; overlay ghi mỗi session dưới project của nó, kèm
+tên hoặc đầu id của session. Session đang chạy là session Claude Code còn mở, hoặc session bất kỳ
+có dùng token trong 10 phút gần nhất.
+
+- **TỔNG**, **LƯỢT**, **≈USD**: tính từ đầu session, không theo `-since`, nên có thể lớn hơn số của
+  project trong 24 giờ. Có cả token của subagent.
+- **CONTEXT**: độ lớn prompt ở lượt gọi gần nhất của chính session, không tính subagent. Đây là số
+  phải gửi lại ở mỗi lượt, nên context càng lớn thì mỗi lượt càng tốn. Overlay chỉ ghi số này khi mở rộng.
+
 ## wj top
 
 Hiện đủ mọi project trong khoảng đang xem: app, lần dùng gần nhất, model, số lượt, token vào, ra,

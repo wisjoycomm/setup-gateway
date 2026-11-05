@@ -155,9 +155,9 @@ const helpUsage = `XEM TOKEN MỌI PROJECT
 gọi mạng, không ghi gì; tính cả phiên mở từ Orca. Các worktree của một repo gộp về
 một project.
 
-  wj top                  bảng trực tiếp đủ chi tiết: app, từng model, token, quy đổi USD;
-                          project vừa chạy lên đầu, có tổng cả máy theo 24 giờ, 7 ngày,
-                          30 ngày, toàn bộ (Ctrl+C để thoát)
+  wj top                  bảng trực tiếp đủ chi tiết: từng session đang chạy (tổng từ đầu
+                          session, context), rồi từng project: app, model, token, quy đổi USD;
+                          có tổng cả máy theo 24 giờ, 7 ngày, 30 ngày, toàn bộ (Ctrl+C để thoát)
   wj top -once            in một lần, luôn đủ mọi project và mọi cột
   wj overlay              cửa sổ nhỏ luôn nổi: mọi project đang mở/đang chạy và tổng cả máy;
                           project mới tự hiện; bấm đúp để xem chi tiết, kéo để đổi chỗ,

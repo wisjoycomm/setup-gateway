@@ -37,6 +37,8 @@ const (
 type sessionCall struct {
 	When                                 time.Time
 	Project, App, Model                  string
+	Session                              string
+	Sidechain                            bool // a subagent's call: it costs tokens but has its own context
 	Input, Output, CacheRead, CacheWrite int64
 	CacheWrite1h                         int64 // the part of CacheWrite kept for an hour, which costs more
 }
@@ -143,6 +145,8 @@ func (s *sessionScanner) readClaudeLine(path string, state *sessionFile, raw []b
 		RequestID string `json:"requestId"`
 		UUID      string `json:"uuid"`
 		Timestamp string `json:"timestamp"`
+		SessionID string `json:"sessionId"` // a subagent's lines carry its parent's id
+		Sidechain bool   `json:"isSidechain"`
 		Message   struct {
 			ID    string `json:"id"`
 			Model string `json:"model"`
@@ -174,8 +178,13 @@ func (s *sessionScanner) readClaudeLine(path string, state *sessionFile, raw []b
 	if key == "" {
 		key = path + "\x00" + line.UUID
 	}
+	session := line.SessionID
+	if session == "" {
+		session = sessionIDOf(path)
+	}
 	s.record("claude\x00"+key, sessionCall{
 		When: when, Project: s.projectOf(line.Cwd), App: "claude", Model: line.Message.Model,
+		Session: session, Sidechain: line.Sidechain,
 		Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
 		CacheWrite1h: usage.Creation.OneHour,
 	})
@@ -227,7 +236,7 @@ func (s *sessionScanner) readCodexLine(path string, state *sessionFile, raw []by
 		// One record per response. A forked session copies old records, and the
 		// turn + response ids count each of them once.
 		state.hasRecords = true
-		s.record("codex\x00"+payload.TurnID+"\x00"+payload.ResponseID, s.codexCall(state, when, payload.Usage))
+		s.record("codex\x00"+payload.TurnID+"\x00"+payload.ResponseID, s.codexCall(path, state, when, payload.Usage))
 	case line.Type == "event_msg" && payload.Type == "token_count" && !state.hasRecords:
 		// Older Codex builds only write a running total.
 		total := payload.Info.Total
@@ -235,20 +244,29 @@ func (s *sessionScanner) readCodexLine(path string, state *sessionFile, raw []by
 			total.CacheWrite - state.lastTotal.CacheWrite, total.Output - state.lastTotal.Output}
 		if diff.Input > 0 || diff.Output > 0 {
 			state.lastTotal = total
-			s.record("codex\x00"+path+"\x00"+line.Timestamp, s.codexCall(state, when, diff))
+			s.record("codex\x00"+path+"\x00"+line.Timestamp, s.codexCall(path, state, when, diff))
 		}
 	}
 }
 
 // codexCall removes cached tokens from Codex's input so the columns mean the
 // same thing as Claude's, where cache tokens are never part of input.
-func (s *sessionScanner) codexCall(state *sessionFile, when time.Time, t codexTokens) sessionCall {
+func (s *sessionScanner) codexCall(path string, state *sessionFile, when time.Time, t codexTokens) sessionCall {
 	input := t.Input - t.Cached - t.CacheWrite
 	if input < 0 {
 		input = 0
 	}
-	return sessionCall{When: when, Project: s.projectOf(state.cwd), App: "codex", Model: state.model,
+	return sessionCall{When: when, Project: s.projectOf(state.cwd), App: "codex", Model: state.model, Session: sessionIDOf(path),
 		Input: input, Output: t.Output, CacheRead: t.Cached, CacheWrite: t.CacheWrite}
+}
+
+// sessionIDOf is a session file's id: its name, without Codex's "rollout-<time>-" prefix.
+func sessionIDOf(path string) string {
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if strings.HasPrefix(name, "rollout-") && len(name) > 36 {
+		return name[len(name)-36:]
+	}
+	return name
 }
 
 func (s *sessionScanner) projectOf(cwd string) string {
@@ -319,6 +337,12 @@ type usageRow struct {
 	Last      time.Time
 	Cost      float64 // list price of the priced calls, in USD
 	Unpriced  int64   // tokens of models with no known price
+
+	// Only when grouped by session.
+	Session   string
+	Name      string    // the name Claude Code shows for an open session
+	Context   int64     // prompt size of the session's latest own call
+	contextAt time.Time // when that call was
 }
 
 func (s *sessionScanner) summarize(f usageFilter) ([]usageRow, usageRow) {
@@ -339,13 +363,18 @@ func (s *sessionScanner) summarize(f usageFilter) ([]usageRow, usageRow) {
 				row.Client = call.App
 			case "model":
 				row.Model = call.Model
+			case "session":
+				row.Session = call.Session
 			}
 		}
-		key := row.Project + "\x00" + row.Client + "\x00" + row.Model
+		key := row.Project + "\x00" + row.Client + "\x00" + row.Model + "\x00" + row.Session
 		g := groups[key]
 		if g == nil {
 			g = &row
 			groups[key] = g
+		}
+		if !call.Sidechain && !call.When.Before(g.contextAt) {
+			g.Context, g.contextAt = call.Input+call.CacheRead+call.CacheWrite, call.When
 		}
 		cost, priced := callCost(call)
 		for _, t := range []*usageRow{g, &all} {
@@ -533,22 +562,84 @@ func windowTag(d time.Duration) string {
 // openClaudeProjects reads Claude Code's per-process session markers, so an idle
 // session still counts as open. Codex has no such marker and is seen by activity.
 func (s *sessionScanner) openClaudeProjects() []string {
-	paths, _ := filepath.Glob(filepath.Join(s.claudeDir, "sessions", "*.json"))
 	var open []string
+	for _, session := range s.openClaudeSessions() {
+		open = appendUnique(open, session.Project)
+	}
+	return open
+}
+
+// openClaudeSessions lists the sessions of Claude Code processes still alive.
+func (s *sessionScanner) openClaudeSessions() []usageRow {
+	paths, _ := filepath.Glob(filepath.Join(s.claudeDir, "sessions", "*.json"))
+	var open []usageRow
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		var marker struct {
-			PID int    `json:"pid"`
-			Cwd string `json:"cwd"`
+			PID       int    `json:"pid"`
+			Cwd       string `json:"cwd"`
+			SessionID string `json:"sessionId"`
+			Name      string `json:"name"`
 		}
 		if json.Unmarshal(data, &marker) == nil && marker.PID > 0 && marker.Cwd != "" && processAlive(marker.PID) {
-			open = appendUnique(open, s.projectOf(marker.Cwd))
+			open = append(open, usageRow{usageTotal: usageTotal{Project: s.projectOf(marker.Cwd)}, Apps: []string{"claude"},
+				Session: marker.SessionID, Name: marker.Name})
 		}
 	}
 	return open
+}
+
+// runningSessions lists the sessions that are open or used tokens within runningWindow,
+// most recent first. Their numbers cover the whole session, whatever window is on show:
+// a session's cost does not reset because it started yesterday.
+func (s *sessionScanner) runningSessions(now time.Time) []usageRow {
+	list, _ := s.summarize(usageFilter{GroupBy: []string{"project", "session"}})
+	open := s.openClaudeSessions()
+	rows := []usageRow{}
+	seen := map[string]bool{}
+	for _, row := range list {
+		isOpen := false
+		for _, session := range open {
+			if session.Session == row.Session {
+				isOpen, row.Name = true, session.Name
+			}
+		}
+		if isOpen || now.Sub(row.Last) < runningWindow {
+			rows = append(rows, row)
+			seen[row.Session] = true
+		}
+	}
+	for _, session := range open {
+		if session.Session != "" && !seen[session.Session] {
+			rows = append(rows, session)
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if !rows[i].Last.Equal(rows[j].Last) {
+			return rows[i].Last.After(rows[j].Last)
+		}
+		return rows[i].Session < rows[j].Session
+	})
+	return rows
+}
+
+// sessionLabel is the session's name if it has one, else the start of its id, which is
+// what claude --resume and codex resume list.
+func sessionLabel(row usageRow) string {
+	if row.Name != "" {
+		return cutRunes(row.Name, 20)
+	}
+	return row.Session[:min(len(row.Session), 8)]
+}
+
+func lastSeenText(last, now time.Time) string {
+	if last.IsZero() {
+		return "đang mở"
+	}
+	return agoText(now.Sub(last))
 }
 
 // runningProjects keeps projects that are open or used tokens within runningWindow.
@@ -690,6 +781,8 @@ const (
 	topWideFixed = 83
 	// topNarrowFixed is what a narrow line uses besides its text column.
 	topNarrowFixed = 44
+	// topSessionNarrowFixed is the same for the narrow session table.
+	topSessionNarrowFixed = 49
 	// topFrameLines is every line of the live screen that is not a project or model row.
 	topFrameLines = 11
 )
@@ -697,19 +790,27 @@ const (
 // renderTop prints every project with all its numbers. width and height are the
 // terminal's, or 0 when nothing limits the output. A terminal under topFullWidth keeps
 // the token columns and moves the app, time and model into one text column.
-func renderTop(list []usageRow, models map[string][]usageRow, total usageRow, label string, now time.Time, width, height int) string {
+func renderTop(sessions, list []usageRow, models map[string][]usageRow, total usageRow, label string, now time.Time, width, height int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "wj top - token theo project, %s (%s)\n\n", label, now.Format("15:04:05"))
+	shown, limit, sessionRows := list, math.MaxInt, sessions
+	if height > 0 {
+		limit = max(height-topFrameLines, 1)
+		if len(sessions) > 0 {
+			sessionRows = sessions[:min(len(sessions), max(limit/2, 1))]
+			limit = max(limit-len(sessionRows)-2, 1) // its heading and the blank line after it
+		}
+		shown = shown[:min(len(shown), limit)]
+	}
+	narrow := width > 0 && width < topFullWidth
+	if len(sessionRows) > 0 {
+		renderTopSessions(&b, sessionRows, now, width, narrow)
+		b.WriteString("\n")
+	}
 	if total.Calls == 0 {
 		b.WriteString("Chưa có lượt gọi nào trong khoảng này.\n")
 		return b.String()
 	}
-	shown, limit := list, math.MaxInt
-	if height > 0 {
-		limit = max(height-topFrameLines, 1)
-		shown = shown[:min(len(shown), limit)]
-	}
-	narrow := width > 0 && width < topFullWidth
 	minModels := 2
 	if narrow {
 		minModels = 1 // there is no model column, so each model needs its own line
@@ -740,11 +841,42 @@ func renderTop(list []usageRow, models map[string][]usageRow, total usageRow, la
 			missing--
 		}
 	}
-	if hidden := len(list) - len(shown); hidden > 0 || missing > 0 {
-		fmt.Fprintf(&b, "  Thiếu chỗ: còn %d project, %d dòng model. Xem đủ: wj top -once\n", hidden, missing)
+	hiddenSessions, hidden := len(sessions)-len(sessionRows), len(list)-len(shown)
+	if hiddenSessions > 0 || hidden > 0 || missing > 0 {
+		fmt.Fprintf(&b, "  Thiếu chỗ: còn %d session, %d project, %d dòng model. Xem đủ: wj top -once\n", hiddenSessions, hidden, missing)
 	}
 	fmt.Fprintf(&b, "  ≈USD: nếu trả theo giá API ngày %s, không phải số tiền thật.\n", pricesAsOf)
 	return b.String()
+}
+
+// renderTopSessions shows what each running session has used since it began. A narrow
+// terminal drops the app and model, which the project table below still shows.
+func renderTopSessions(b *strings.Builder, sessions []usageRow, now time.Time, width int, narrow bool) {
+	w := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	columns := func(app, model string) string {
+		if narrow {
+			return ""
+		}
+		return app + "\t" + model + "\t"
+	}
+	fmt.Fprintf(w, "  SESSION ĐANG CHẠY\t%sLẦN CUỐI\t%6s\t%7s\t%7s\t%8s\n", columns("APP", "MODEL"), "LƯỢT", "CONTEXT", "TỔNG", "≈USD")
+	for _, row := range sessions {
+		mark := " "
+		if !row.Last.IsZero() && now.Sub(row.Last) < activeWindow {
+			mark = "●"
+		}
+		label := sessionLabel(row)
+		project, model := row.Project, row.LastModel
+		switch {
+		case narrow:
+			project = cutRunes(project, max(width-topSessionNarrowFixed-len([]rune(label))-3, 6))
+		case width > 0:
+			project, model = cutRunes(project, 24), cutRunes(model, 26)
+		}
+		fmt.Fprintf(w, "%s %s · %s\t%s%s\t%6d\t%7s\t%7s\t%8s\n", mark, project, label, columns(strings.Join(row.Apps, ","), model),
+			lastSeenText(row.Last, now), row.Calls, compactTokens(row.Context), compactTokens(row.Total), costText(row))
+	}
+	_ = w.Flush()
 }
 
 func topMark(row overlayDetailEntry, now time.Time) string {
@@ -817,7 +949,7 @@ func runTop(args []string, out io.Writer) error {
 		scanner.scan(time.Time{})
 		since := now.Add(-*window)
 		list, total := scanner.projectStatus(since)
-		return renderTop(list, scanner.modelsByProject(since), total, label, now, width, height) + "\n" + scanner.machineTotals(now) + "\n"
+		return renderTop(scanner.runningSessions(now), list, scanner.modelsByProject(since), total, label, now, width, height) + "\n" + scanner.machineTotals(now) + "\n"
 	}
 	stdout, isFile := out.(*os.File)
 	if *once || !isFile || !term.IsTerminal(int(stdout.Fd())) {
