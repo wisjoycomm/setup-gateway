@@ -27,11 +27,11 @@ func readSettings(path string) (map[string]any, error) {
 	}
 	var root map[string]any
 	if err := json.Unmarshal(data, &root); err != nil || root == nil {
-		return nil, fmt.Errorf("cannot parse %s; original file left untouched", path)
+		return nil, fmt.Errorf("file %s bị lỗi cú pháp JSON; tool không sửa nó, hãy sửa tay rồi chạy lại", path)
 	}
 	if env, exists := root["env"]; exists {
 		if _, ok := env.(map[string]any); !ok {
-			return nil, fmt.Errorf("env in %s must be an object; original file left untouched", path)
+			return nil, fmt.Errorf("mục env trong %s không đúng dạng; tool không sửa file", path)
 		}
 	}
 	return root, nil
@@ -117,7 +117,7 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 	if err := writeFile(path, string(data)+"\n", dry); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s (%s; hooks, plugins and unrelated settings preserved)", path, p.Auth), nil
+	return fmt.Sprintf("%s (%s; giữ nguyên hooks, plugin và cài đặt khác)", path, p.Auth), nil
 }
 
 func cleanClaudeEnvironment(values []string) []string {
@@ -140,6 +140,6 @@ func warnEnvironment(out io.Writer) {
 		}
 	}
 	if len(names) > 0 {
-		fmt.Fprintf(out, "Your shell also defines %s. Remove these old overrides before a normal launch, or use -run for a clean child environment.\n", strings.Join(names, ", "))
+		fmt.Fprintf(out, "Chú ý: terminal đang có biến %s (cấu hình cũ). Xoá chúng, hoặc mở Claude bằng -run để bỏ qua.\n", strings.Join(names, ", "))
 	}
 }

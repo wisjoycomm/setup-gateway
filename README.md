@@ -25,17 +25,15 @@ For an offline transfer of the CLI itself:
 Download and extract `setup-gateway-windows-amd64.zip` from GitHub Releases, then
 double-click **Run-Setup.cmd**. The menu offers:
 
-1. New-machine setup: select applications, tools, optional window manager and client logins.
-2. Configure/login a selected application.
-3. Install command-line tools.
-4. Install/configure a window manager.
-5. Uninstall command-line tools.
-6. Uninstall window-manager setup.
-7. List and activate saved Claude connection profiles.
-8. Inspect installed applications locally.
-9. Install missing applications.
-10. Update applications explicitly.
-11. Update setup-gateway itself.
+- **Install**: 1 new-machine wizard, 2 missing apps (Claude, Codex, Orca, mitmproxy...), 3 command-line toolkit, 4 window manager.
+- **Connect**: 5 Claude Code (gateway / OAuth token / API key / browser login), 6 Codex, OpenCode, Cursor, Antigravity, Orca, 7 switch saved Claude profile.
+- **Check**: 8 installed apps, 9 token usage through mitmproxy.
+- **Update / remove**: 10 apps, 11 setup-gateway itself, 12 uninstall toolkit or window manager.
+- `h` quick help, `0` exit.
+
+Run `setup-gateway help` for a plain-language overview, or `help claude`, `help codex`,
+`help proxy`, `help apps`, `help tools`, `help words` (glossary). Menus, prompts and
+errors are in Vietnamese; on Windows the console is switched to UTF-8 while it runs.
 
 The menu returns after each operation (including an error); choose `0` to exit.
 Opening it, listing applications and reading the version make no network requests.
@@ -76,7 +74,7 @@ the public install commands fetch the latest **published** binary, not local cha
 
 ```text
 setup-gateway apps list
-setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca
+setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
 setup-gateway apps install all -dry-run
 setup-gateway apps update codex,orca
 setup-gateway version
@@ -93,6 +91,7 @@ setup-gateway update
 | `antigravity` (alias `agy`) | Official CLI installer | Official installer | Official installer |
 | `antigravity-ide` | WinGet `Google.AntigravityIDE` | Homebrew cask | Manual vendor download |
 | `orca` | Official upstream NSIS installer | Upstream ZIP to `~/Applications/Orca.app` | Upstream AppImage to `~/.local/bin/orca-ide` |
+| `mitmproxy` | WinGet `mitmproxy.mitmproxy` | Homebrew formula | `uv tool install mitmproxy` |
 
 Use `apps install all` to select every entry. On Linux, the two manual desktop
 installers report unsupported and the remaining selections still run. Native
@@ -330,6 +329,35 @@ Antigravity CLI has no supported custom endpoint and is reported as skipped.
 | Codex | `~/.codex/config.toml`; gateway Responses API provider and credential |
 | OpenCode | `~/.config/opencode/opencode.json` or existing `.jsonc`; provider options and models |
 | Cursor | Manual instructions for Settings > Models; no global environment writes |
+
+## Token usage through mitmproxy
+
+```text
+# One command: installs mitmproxy if missing (asks; -yes for scripts), starts a
+# private proxy, runs the app, stops the proxy when the app exits.
+setup-gateway proxy run claude         # also codex, opencode or any command
+
+# Step by step: a long-running proxy shared by several terminals.
+setup-gateway proxy setup              # install mitmproxy and create its CA once
+setup-gateway proxy start              # terminal 1, keep open (-web for mitmweb, -port N)
+setup-gateway proxy run claude         # terminal 2; reuses the running proxy
+
+setup-gateway proxy usage              # last 24h; -since 168h, -all
+setup-gateway proxy status
+```
+
+`setup-gateway apps install mitmproxy` still works if you'd rather install it yourself.
+
+`proxy start` runs mitmdump on 127.0.0.1 with an embedded addon that appends one
+JSON line per model call to `~/.setup-gateway/proxy/usage.jsonl`: time, client,
+host, model, HTTP status and input/output/cache token counts from the response
+`usage` field (Anthropic Messages, OpenAI Responses and Chat Completions, JSON or
+SSE, plus Responses over WebSocket). Prompts, responses and headers are not logged.
+`proxy run` sets `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` and `CODEX_CA_CERTIFICATE`
+for that child process only; client configuration and the user environment are
+not changed. To use your own mitmproxy instance, load
+`~/.setup-gateway/proxy/usage_meter.py` with `-s` and run
+`proxy run -proxy http://HOST:PORT -ca CA.pem claude`.
 
 ## Preview, credentials and backups
 

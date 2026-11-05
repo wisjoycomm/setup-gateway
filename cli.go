@@ -23,22 +23,22 @@ func runCLI(args []string, input io.Reader, out io.Writer) error {
 func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) error {
 	flags := flag.NewFlagSet("setup-gateway", flag.ContinueOnError)
 	flags.SetOutput(out)
-	auth := flags.String("auth", "", "gateway, oauth (session-key), api-key, or login")
-	base := flags.String("base-url", "", "custom gateway URL; accepts a bare domain")
-	key := flags.String("key", "", "credential (prefer the hidden prompt, -key-stdin, or SETUP_GATEWAY_KEY)")
-	keyStdin := flags.Bool("key-stdin", false, "read the credential from one line of standard input")
-	header := flags.String("auth-header", "bearer", "gateway credential header: bearer or x-api-key (Claude only)")
-	only := flags.String("only", "", "comma-separated clients: claude,codex,cursor,opencode,agy")
-	provider := flags.String("provider-id", "gateway", "provider name used by codex and opencode")
-	profile := flags.String("profile", "", "save this Claude connection as a named profile, then activate it")
-	use := flags.String("use-profile", "", "activate a saved Claude profile")
-	list := flags.Bool("list-profiles", false, "list saved profiles without revealing credentials")
-	models := flags.String("models", "", "comma-separated gateway model IDs; replaces discovered IDs")
-	skip := flags.Bool("skip-check", false, "skip the /models request (use -models for gateway model mappings)")
-	install := flags.Bool("install-claude", false, "install Claude Code with its official installer if missing")
-	noLogin := flags.Bool("no-login", false, "configure browser login without opening the browser yet")
-	launch := flags.Bool("run", false, "start Claude Code after setup with a clean authentication environment")
-	dry := flags.Bool("dry-run", false, "preview only: no writes, network, installation, or login")
+	auth := flags.String("auth", "", "cách kết nối: gateway, oauth (token sk-ant-oat), api-key, login (đăng nhập web)")
+	base := flags.String("base-url", "", "domain gateway, vd ai.adnx.vn (không cần https://)")
+	key := flags.String("key", "", "key/token (nên để tool hỏi ẩn, hoặc dùng -key-stdin / biến SETUP_GATEWAY_KEY)")
+	keyStdin := flags.Bool("key-stdin", false, "đọc key từ một dòng stdin (cho script)")
+	header := flags.String("auth-header", "bearer", "header gửi key tới gateway: bearer hoặc x-api-key (chỉ Claude)")
+	only := flags.String("only", "", "app cần cấu hình, cách nhau dấu phẩy: claude,codex,cursor,opencode,agy")
+	provider := flags.String("provider-id", "gateway", "tên provider ghi vào Codex/OpenCode")
+	profile := flags.String("profile", "", "lưu kết nối Claude này với tên này rồi dùng luôn")
+	use := flags.String("use-profile", "", "chuyển sang kết nối Claude đã lưu")
+	list := flags.Bool("list-profiles", false, "xem các kết nối đã lưu (không hiện key)")
+	models := flags.String("models", "", "tên model của gateway, cách nhau dấu phẩy (thay cho danh sách tự lấy)")
+	skip := flags.Bool("skip-check", false, "không gọi /v1/models (khi đó nhập -models)")
+	install := flags.Bool("install-claude", false, "tự cài Claude Code nếu máy chưa có")
+	noLogin := flags.Bool("no-login", false, "đăng nhập web: chỉ dọn cấu hình, chưa mở trình duyệt")
+	launch := flags.Bool("run", false, "mở Claude Code ngay sau khi xong")
+	dry := flags.Bool("dry-run", false, "chạy thử: không ghi file, không gọi mạng, không cài, không đăng nhập")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -46,24 +46,24 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected arguments; see -help")
+		return errors.New("có tham số không hiểu; xem: setup-gateway help claude")
 	}
 	var err error
 	if *list {
 		return listProfiles(home, out)
 	}
 	if !validName(*provider) {
-		return errors.New("provider-id must contain only letters, numbers, underscore or hyphen")
+		return errors.New("provider-id chỉ gồm chữ, số, _ hoặc -")
 	}
 	if *profile != "" && !validName(*profile) {
-		return errors.New("invalid profile name; use letters, numbers, underscore or hyphen")
+		return errors.New("tên profile chỉ gồm chữ, số, _ hoặc - (vd adnx, work)")
 	}
 	reader := bufio.NewReader(&oneByteReader{input})
 	wizard := len(args) == 0 || len(args) == 2 && args[0] == "-only" && args[1] == "claude"
 	var p connectionProfile
 	if *use != "" {
 		if *auth != "" || *base != "" || *key != "" || *keyStdin || *profile != "" || *models != "" {
-			return errors.New("use-profile cannot be combined with new connection credentials or model settings")
+			return errors.New("-use-profile không đi kèm key, domain hay -models mới")
 		}
 		p, err = loadProfile(home, *use)
 		if err != nil {
@@ -77,11 +77,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 			if *base != "" || *key != "" || *keyStdin || os.Getenv("SETUP_GATEWAY_KEY") != "" {
 				*auth = "gateway"
 			} else {
-				fmt.Fprintln(out, "Claude Code setup\n  1. Custom domain / gateway\n  2. OAuth / session token (sk-ant-oat...)\n  3. Anthropic API key (direct API)\n  4. Normal browser login")
-				choice := prompt(reader, out, "Method [1-4]")
+				fmt.Fprintln(out, "Kết nối Claude Code - bạn đang có gì?\n  1. Domain công ty (vd ai.adnx.vn) + key của domain đó   -> Gateway\n  2. Token bắt đầu bằng sk-ant-oat...                      -> Token OAuth\n  3. API key từ console.anthropic.com                      -> API key\n  4. Tài khoản Claude Pro/Max, đăng nhập trên trình duyệt  -> Đăng nhập web")
+				choice := prompt(reader, out, "Chọn [1-4]")
 				*auth = map[string]string{"1": "gateway", "2": "oauth", "3": "api-key", "4": "login"}[choice]
 				if *auth == "" {
-					return errors.New("choose a method from 1 to 4, or pass -auth")
+					return errors.New("hãy chọn số từ 1 đến 4")
 				}
 			}
 		}
@@ -89,7 +89,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		if *only == "" {
 			*only = "claude"
 			if wizard && *auth == "gateway" {
-				choice := prompt(reader, out, "Clients [claude], or all, or comma-separated names")
+				choice := prompt(reader, out, "Cấu hình app nào? Enter = chỉ Claude, all = Claude+Codex+OpenCode+Cursor, hoặc gõ tên cách dấu phẩy")
 				if choice == "all" {
 					*only = "claude,codex,cursor,opencode,agy"
 				} else if choice != "" {
@@ -102,22 +102,22 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		}
 		if *auth == "gateway" && *base == "" {
 			if *keyStdin {
-				return errors.New("-key-stdin requires -base-url for gateway mode")
+				return errors.New("-key-stdin cần kèm -base-url khi dùng gateway")
 			}
-			*base = prompt(reader, out, "Custom domain (e.g. https://ai.example.com)")
+			*base = prompt(reader, out, "Domain gateway (vd ai.adnx.vn)")
 		}
 		if *keyStdin {
 			if *key != "" {
-				return errors.New("use either -key or -key-stdin, not both")
+				return errors.New("chỉ dùng -key hoặc -key-stdin, không dùng cả hai")
 			}
 			*key = prompt(reader, io.Discard, "")
 		} else if *key == "" && *auth != "login" {
 			*key = strings.TrimSpace(os.Getenv("SETUP_GATEWAY_KEY"))
 		}
 		if *key == "" && *auth != "login" {
-			label := "API key / gateway token"
+			label := "Dán key (gõ sẽ không hiện ra)"
 			if *auth == "oauth" {
-				label = "OAuth token (sk-ant-oat..., NOT the browser sessionKey cookie)"
+				label = "Dán token sk-ant-oat... (gõ sẽ không hiện ra)"
 			}
 			*key, err = promptSecret(input, reader, out, label)
 			if err != nil {
@@ -131,15 +131,15 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		return err
 	}
 	if (*launch || *install) && !contains(targets, "claude") {
-		return errors.New("install-claude and run require the claude target")
+		return errors.New("-install-claude và -run chỉ dùng khi có claude trong -only")
 	}
 	if err := p.validate(); err != nil {
 		return err
 	}
 	if wizard && len(targets) == 1 && targets[0] == "claude" {
-		*profile = prompt(reader, out, "Save connection as profile (e.g. work, adnx; Enter = do not save)")
+		*profile = prompt(reader, out, "Lưu kết nối này với tên gì để đổi lại sau? (vd adnx, work; Enter = không lưu)")
 		if *profile != "" && !validName(*profile) {
-			return errors.New("invalid profile name; use letters, numbers, underscore or hyphen")
+			return errors.New("tên profile chỉ gồm chữ, số, _ hoặc - (vd adnx, work)")
 		}
 	}
 	// Refuse invalid user settings before installing software or making requests.
@@ -149,7 +149,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		}
 	}
 	if !*dry && !*skip && (p.Auth == "gateway" || p.Auth == "api-key") {
-		fmt.Fprintln(out, "Checking model access (no generation request)...")
+		fmt.Fprintln(out, "Đang kiểm tra key và lấy danh sách model (không tốn token)...")
 		ids, err := discoverModels(p)
 		if err != nil {
 			return err
@@ -157,13 +157,13 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		if len(p.Models) == 0 {
 			p.Models = ids
 		}
-		fmt.Fprintf(out, "Available models: %d\n", len(ids))
+		fmt.Fprintf(out, "Key hợp lệ, gateway có %d model.\n", len(ids))
 	}
 	if p.Auth == "gateway" && contains(targets, "claude") && !*dry && *models == "" && *use == "" && pick(p.Models, []string{"claude"}, nil) == "" && pick(p.Models, []string{"opus"}, nil) == "" && pick(p.Models, []string{"sonnet"}, nil) == "" && pick(p.Models, []string{"haiku"}, nil) == "" && pick(p.Models, []string{"fable"}, nil) == "" {
-		return errors.New("no Claude model IDs found; provide gateway IDs with -models, and -skip-check if /models is unavailable")
+		return errors.New("gateway không có model Claude nào; nhập tên model bằng -models (thêm -skip-check nếu gateway không có /v1/models)")
 	}
 	if wizard && contains(targets, "claude") && findClaude(home) == "" {
-		*install = strings.EqualFold(prompt(reader, out, "Claude Code is missing. Install from claude.ai? [y/N]"), "y")
+		*install = yes(prompt(reader, out, "Máy chưa có Claude Code. Cài luôn? [y/N]"))
 	}
 	if *install {
 		if err := ensureClaude(home, *dry, out); err != nil {
@@ -171,13 +171,13 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		}
 	}
 	if !*dry && contains(targets, "claude") && (p.Auth == "login" && !*noLogin || *launch) && findClaude(home) == "" {
-		return errors.New("Claude Code is not installed; rerun with -install-claude, or use -no-login for configuration only")
+		return errors.New("máy chưa có Claude Code; thêm -install-claude, hoặc -no-login nếu chỉ muốn ghi cấu hình")
 	}
 	if *profile != "" {
 		if err := saveProfile(home, *profile, p, *dry); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Profile: %s (%s)\n", *profile, p.Auth)
+		fmt.Fprintf(out, "Đã lưu profile: %s (%s)\n", *profile, p.Auth)
 	}
 	gpt := pick(p.Models, []string{"gpt"}, []string{"review"})
 	for _, name := range targets {
@@ -189,11 +189,11 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		case "codex":
 			line, err = setupCodex(home, p.BaseURL, p.Credential, gpt, *provider, *dry)
 		case "cursor":
-			line, err = setupCursor(p.BaseURL, p.Credential, gpt, *dry)
+			line = setupCursor()
 		case "opencode":
 			line, err = setupOpenCode(home, p.BaseURL, p.Credential, p.Models, *provider, *dry)
 		case "agy":
-			line = "SKIP - no custom endpoint; uses the signed-in account"
+			line = "SKIP - Antigravity không hỗ trợ gateway riêng, dùng tài khoản đã đăng nhập"
 		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
@@ -201,23 +201,23 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		fmt.Fprintf(out, "%s: %s\n", name, line)
 	}
 	if *dry {
-		fmt.Fprintln(out, "Dry run: no files, network requests, installation, or login.")
+		fmt.Fprintln(out, "Dry run: chỉ xem trước, không ghi file, không gọi mạng, không cài, không đăng nhập.")
 		return nil
 	}
 	if contains(targets, "claude") {
 		warnEnvironment(out)
 		if p.Auth == "login" && !*noLogin {
 			if err := runClaude(home, "auth", "login", "--claudeai"); err != nil {
-				return fmt.Errorf("configuration saved, but browser login failed: %w", err)
+				return fmt.Errorf("đã lưu cấu hình nhưng đăng nhập web lỗi: %w", err)
 			}
 		}
 		if p.Auth == "oauth" {
-			fmt.Fprintln(out, "OAuth token saved. No browser login required; token validity is checked by Claude on its next request.")
+			fmt.Fprintln(out, "Đã lưu token OAuth. Không cần đăng nhập web; Claude sẽ kiểm tra token ở lần chat đầu.")
 		}
 		if findClaude(home) == "" {
-			fmt.Fprintln(out, "Claude Code is not installed yet. Rerun with -install-claude when ready.")
+			fmt.Fprintln(out, "Máy chưa có Claude Code. Cài bằng: setup-gateway apps install claude")
 		}
-		fmt.Fprintln(out, "Start a NEW Claude session and check /status. Existing sessions keep their previous connection.")
+		fmt.Fprintln(out, "Xong. Mở phiên Claude MỚI rồi gõ /status để kiểm tra (phiên đang mở vẫn dùng kết nối cũ).")
 		if *launch {
 			return runClaude(home)
 		}
@@ -262,14 +262,14 @@ func contains(values []string, value string) bool {
 
 func validateTargets(targets []string, p connectionProfile, profile bool) error {
 	if len(targets) == 0 {
-		return errors.New("select at least one client")
+		return errors.New("chưa chọn app nào")
 	}
 	for _, target := range targets {
 		if !contains([]string{"claude", "codex", "cursor", "opencode", "agy"}, target) {
-			return fmt.Errorf("unknown target %q", target)
+			return fmt.Errorf("không có app %q (chọn trong: claude, codex, cursor, opencode, agy)", target)
 		}
 		if (p.Auth != "gateway" || profile || p.Header == "x-api-key") && target != "claude" {
-			return errors.New("OAuth, API key, login, named profiles, and x-api-key gateways require -only claude")
+			return errors.New("token OAuth, API key, đăng nhập web, profile và header x-api-key chỉ áp dụng cho Claude (-only claude). App khác: setup-gateway configure codex")
 		}
 	}
 	return nil

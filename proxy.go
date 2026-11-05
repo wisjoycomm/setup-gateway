@@ -1,0 +1,578 @@
+package main
+
+import (
+	"bufio"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"golang.org/x/term"
+)
+
+//go:embed proxy_addon.py
+var proxyAddon []byte
+
+const defaultProxyPort = 8877
+
+const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, không gửi đi đâu)
+
+  mitmproxy đứng giữa Claude/Codex và gateway (ví dụ ai.adnx.vn), ghi lại
+  mỗi lượt gọi model: thời gian, ứng dụng, model, số token vào/ra/cache.
+  KHÔNG ghi prompt, câu trả lời hay API key.
+
+  CÁCH 1 - MỘT LỆNH (dễ nhất)
+    setup-gateway proxy run claude     tự cài mitmproxy nếu thiếu, tự bật proxy,
+    setup-gateway proxy run codex      mở app; thoát app là proxy tự tắt.
+
+  CÁCH 2 - TỪNG BƯỚC (proxy chạy lâu, nhiều app dùng chung)
+    setup-gateway proxy setup          cài mitmproxy + tạo chứng chỉ (một lần)
+    setup-gateway proxy start          bật proxy, để cửa sổ này chạy
+    setup-gateway proxy run claude     ở cửa sổ khác; tự dùng proxy đang chạy
+
+  XEM ĐÃ DÙNG BAO NHIÊU
+    setup-gateway proxy usage          24 giờ qua
+    setup-gateway proxy usage -since 168h   7 ngày;  -all = toàn bộ
+
+  Lệnh khác:
+    proxy status               kiểm tra mitmproxy, chứng chỉ, cổng, file log
+    -yes                       (setup/start/run) tự cài mitmproxy, không hỏi
+    proxy start -web           giao diện web xem từng request (http://127.0.0.1:8081)
+    proxy start -port 9000     đổi cổng (mặc định 8877; nhớ dùng cùng -port khi run)
+    proxy run -proxy http://IP:PORT -ca FILE.pem codex
+                               dùng mitmproxy riêng của bạn (máy khác / cổng khác)
+
+  Chỉ app mở bằng "proxy run" mới đi qua proxy. Cấu hình Claude/Codex
+  không bị sửa; tắt proxy là mọi thứ trở lại như cũ.`
+
+func proxyDir(home string) string { return filepath.Join(home, ".setup-gateway", "proxy") }
+
+func proxyLogPath(home string) string { return filepath.Join(proxyDir(home), "usage.jsonl") }
+
+func mitmCAPath(home string) string {
+	return filepath.Join(home, ".mitmproxy", "mitmproxy-ca-cert.pem")
+}
+
+func runProxy(args []string, input io.Reader, out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 || contains([]string{"help", "-h", "-help", "--help"}, args[0]) {
+		fmt.Fprintln(out, proxyHelp)
+		return nil
+	}
+	switch args[0] {
+	case "start":
+		return proxyStart(args[1:], input, out, home)
+	case "run":
+		return proxyRun(args[1:], input, out, home)
+	case "setup":
+		return proxySetup(args[1:], input, out, home)
+	case "usage":
+		return proxyUsage(args[1:], out, home)
+	case "status":
+		return proxyStatus(out, home)
+	}
+	return fmt.Errorf("không hiểu lệnh proxy %q; xem: setup-gateway proxy help", args[0])
+}
+
+func findMitm(home, tool string) string {
+	app, _ := appByID("mitmproxy")
+	dump := findApp(app, home)
+	if dump == "" || tool == "mitmdump" {
+		return dump
+	}
+	ext := filepath.Ext(dump)
+	sibling := filepath.Join(filepath.Dir(dump), tool+ext)
+	if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
+		return sibling
+	}
+	if path, err := exec.LookPath(tool); err == nil {
+		return path
+	}
+	return ""
+}
+
+func proxyStart(args []string, input io.Reader, out io.Writer, home string) error {
+	flags := flag.NewFlagSet("proxy start", flag.ContinueOnError)
+	flags.SetOutput(out)
+	port := flags.Int("port", defaultProxyPort, "cổng proxy trên 127.0.0.1")
+	web := flags.Bool("web", false, "mở mitmweb (xem từng request trên trình duyệt) thay vì mitmdump")
+	dry := flags.Bool("dry-run", false, "chỉ in lệnh sẽ chạy")
+	assumeYes := flags.Bool("yes", false, "tự cài mitmproxy nếu thiếu, không hỏi")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 || *port < 1 || *port > 65535 {
+		return errors.New("cách dùng: setup-gateway proxy start [-port 8877] [-web] [-yes] [-dry-run]")
+	}
+	tool := "mitmdump"
+	if *web {
+		tool = "mitmweb"
+	}
+	fmt.Fprintf(out, "Proxy: http://127.0.0.1:%d   Log: %s\n", *port, proxyLogPath(home))
+	if *dry {
+		fmt.Fprintln(out, "Dry run:", strings.Join(mitmCommand(tool, home, *port)[1:], " "))
+		return nil
+	}
+	if portOpen(*port) {
+		return fmt.Errorf("cổng %d đang bận (có thể proxy đã chạy rồi); dùng -port khác hoặc xem: setup-gateway proxy status", *port)
+	}
+	bin, err := ensureMitm(home, tool, *assumeYes, input, out)
+	if err != nil {
+		return err
+	}
+	if err := writeAddon(home); err != nil {
+		return err
+	}
+	command := mitmCommand(bin, home, *port)
+	portFlag := ""
+	if *port != defaultProxyPort {
+		portFlag = " -port " + strconv.Itoa(*port)
+	}
+	fmt.Fprintf(out, "Để cửa sổ này mở. Ở cửa sổ khác chạy: setup-gateway proxy run%s claude  (hoặc codex)\nNhấn Ctrl+C để tắt proxy.\n\n", portFlag)
+	return runChild(command, input, out, os.Environ())
+}
+
+// proxyEnv routes one child process through the proxy and trusts its CA, without
+// touching any configuration file or the user's persistent environment.
+func proxyEnv(env []string, proxy, ca string) []string {
+	var result []string
+	for _, item := range env {
+		name, _, _ := strings.Cut(item, "=")
+		switch strings.ToUpper(name) {
+		case "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "CODEX_CA_CERTIFICATE":
+			continue
+		}
+		result = append(result, item)
+	}
+	return append(result,
+		"HTTPS_PROXY="+proxy, "HTTP_PROXY="+proxy, "https_proxy="+proxy, "http_proxy="+proxy,
+		"NO_PROXY=localhost,127.0.0.1,::1", "no_proxy=localhost,127.0.0.1,::1",
+		"NODE_EXTRA_CA_CERTS="+ca, "CODEX_CA_CERTIFICATE="+ca)
+}
+
+func proxyRun(args []string, input io.Reader, out io.Writer, home string) error {
+	flags := flag.NewFlagSet("proxy run", flag.ContinueOnError)
+	flags.SetOutput(out)
+	port := flags.Int("port", defaultProxyPort, "cổng của proxy start")
+	custom := flags.String("proxy", "", "URL mitmproxy riêng, ví dụ http://192.168.1.10:8080")
+	ca := flags.String("ca", "", "chứng chỉ CA (.pem) của mitmproxy riêng; mặc định ~/.mitmproxy/mitmproxy-ca-cert.pem")
+	dry := flags.Bool("dry-run", false, "chỉ in cách chạy")
+	assumeYes := flags.Bool("yes", false, "tự cài mitmproxy nếu thiếu, không hỏi")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	rest := flags.Args()
+	if len(rest) == 0 {
+		return errors.New("cách dùng: setup-gateway proxy run claude|codex|opencode|LỆNH [tham số của app]")
+	}
+	proxy := *custom
+	if proxy == "" {
+		proxy = fmt.Sprintf("http://127.0.0.1:%d", *port)
+	}
+	u, err := url.Parse(proxy)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return errors.New("-proxy phải có dạng http://HOST:PORT")
+	}
+	if *ca == "" {
+		*ca = mitmCAPath(home)
+	}
+	binary := rest[0]
+	if app, err := appByID(rest[0]); err == nil {
+		binary = findApp(app, home)
+	} else if path, err := exec.LookPath(rest[0]); err == nil {
+		binary = path
+	} else {
+		binary = ""
+	}
+	fmt.Fprintf(out, "Chạy %s qua proxy %s (CA: %s)\n", rest[0], proxy, *ca)
+	if *dry {
+		return nil
+	}
+	if binary == "" {
+		return fmt.Errorf("không tìm thấy %s; cài bằng: setup-gateway apps install %s", rest[0], rest[0])
+	}
+	if conn, err := net.DialTimeout("tcp", u.Host, 2*time.Second); err == nil {
+		conn.Close()
+	} else if *custom != "" {
+		return fmt.Errorf("không kết nối được proxy %s; kiểm tra mitmproxy của bạn đang chạy", proxy)
+	} else {
+		// One-command mode: start a private mitmdump for this app and stop it afterwards.
+		stop, err := startBackgroundProxy(home, *port, *assumeYes, input, out)
+		if err != nil {
+			return err
+		}
+		defer stop()
+	}
+	if _, err := os.Stat(*ca); err != nil {
+		return fmt.Errorf("chưa có chứng chỉ %s; chạy: setup-gateway proxy setup", *ca)
+	}
+	err = runChild(append([]string{binary}, rest[1:]...), input, out, proxyEnv(os.Environ(), proxy, *ca))
+	if *custom == "" {
+		fmt.Fprintln(out, "Xem token đã dùng: setup-gateway proxy usage")
+	}
+	return err
+}
+
+func mitmCommand(bin, home string, port int) []string {
+	return []string{bin, "--listen-host", "127.0.0.1", "-p", strconv.Itoa(port), "-s", filepath.Join(proxyDir(home), "usage_meter.py"),
+		"--set", "usage_log=" + proxyLogPath(home), "--set", "flow_detail=0"}
+}
+
+func writeAddon(home string) error {
+	if err := os.MkdirAll(proxyDir(home), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(proxyDir(home), "usage_meter.py"), proxyAddon, 0o600)
+}
+
+func portOpen(port int) bool {
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+func interactive(input io.Reader) bool {
+	file, ok := input.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+// ensureMitm returns the mitmproxy tool, installing mitmproxy first when it is
+// missing. A terminal user is asked (Enter = yes); scripts must pass -yes.
+func ensureMitm(home, tool string, assumeYes bool, input io.Reader, out io.Writer) (string, error) {
+	if bin := findMitm(home, tool); bin != "" {
+		return bin, nil
+	}
+	if !assumeYes {
+		if !interactive(input) {
+			return "", errors.New("chưa có mitmproxy; thêm -yes để tự cài, hoặc: setup-gateway apps install mitmproxy")
+		}
+		answer := menuAnswer(input, out, "Máy chưa có mitmproxy. Cài ngay? [Y/n]")
+		if answer != "" && !yes(answer) {
+			return "", errors.New("đã huỷ; cài sau bằng: setup-gateway apps install mitmproxy")
+		}
+	}
+	fmt.Fprintln(out, "Đang cài mitmproxy...")
+	if err := installApps([]string{"install", "mitmproxy"}, input, out); err != nil {
+		return "", err
+	}
+	if bin := findMitm(home, tool); bin != "" {
+		return bin, nil
+	}
+	return "", errors.New("đã cài mitmproxy nhưng chưa thấy lệnh; mở terminal mới rồi chạy lại")
+}
+
+// installApps is replaced in tests so they never install software.
+var installApps = func(args []string, input io.Reader, out io.Writer) error {
+	return newAppManager().run(args, input, out)
+}
+
+// startBackgroundProxy runs mitmdump quietly (output in mitmdump.log), waits
+// until it listens and its CA exists, and returns a function that stops it.
+func startBackgroundProxy(home string, port int, assumeYes bool, input io.Reader, out io.Writer) (func(), error) {
+	bin, err := ensureMitm(home, "mitmdump", assumeYes, input, out)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeAddon(home); err != nil {
+		return nil, err
+	}
+	logPath := filepath.Join(proxyDir(home), "mitmdump.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	command := mitmCommand(bin, home, port)
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return nil, fmt.Errorf("không bật được mitmproxy: %w", err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	stop := func() {
+		_ = cmd.Process.Kill()
+		<-exited
+		logFile.Close()
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, err := os.Stat(mitmCAPath(home)); err == nil && portOpen(port) {
+			break
+		}
+		select {
+		case <-exited:
+			logFile.Close()
+			return nil, fmt.Errorf("mitmproxy tắt ngay khi bật; xem %s", logPath)
+		case <-time.After(300 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			stop()
+			return nil, fmt.Errorf("mitmproxy không sẵn sàng sau 30 giây; xem %s", logPath)
+		}
+	}
+	fmt.Fprintf(out, "Đã bật proxy tạm ở cổng %d (tự tắt khi thoát app).\n", port)
+	return stop, nil
+}
+
+// proxySetup installs mitmproxy and creates its CA once, for the step-by-step mode.
+func proxySetup(args []string, input io.Reader, out io.Writer, home string) error {
+	flags := flag.NewFlagSet("proxy setup", flag.ContinueOnError)
+	flags.SetOutput(out)
+	assumeYes := flags.Bool("yes", false, "cài mitmproxy không cần hỏi")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("cách dùng: setup-gateway proxy setup [-yes]")
+	}
+	if _, err := ensureMitm(home, "mitmdump", *assumeYes, input, out); err != nil {
+		return err
+	}
+	if _, err := os.Stat(mitmCAPath(home)); err != nil {
+		port := defaultProxyPort
+		for portOpen(port) {
+			port++
+		}
+		stop, err := startBackgroundProxy(home, port, true, input, out)
+		if err != nil {
+			return err
+		}
+		stop()
+	} else if err := writeAddon(home); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Proxy đã sẵn sàng:")
+	_ = proxyStatus(out, home)
+	fmt.Fprintln(out, "Dùng: setup-gateway proxy run claude   (hoặc proxy start để chạy lâu)")
+	return nil
+}
+
+type usageRecord struct {
+	TS         string `json:"ts"`
+	Client     string `json:"client"`
+	Model      string `json:"model"`
+	Status     int    `json:"status"`
+	Input      int64  `json:"input"`
+	Output     int64  `json:"output"`
+	CacheRead  int64  `json:"cache_read"`
+	CacheWrite int64  `json:"cache_write"`
+}
+
+type usageTotal struct {
+	Client, Model                               string
+	Calls, Failed                               int
+	Input, Output, CacheRead, CacheWrite, Total int64
+}
+
+func summarizeUsage(r io.Reader, since time.Time) ([]usageTotal, usageTotal, error) {
+	groups := map[string]*usageTotal{}
+	var all usageTotal
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	for scanner.Scan() {
+		var rec usageRecord
+		if json.Unmarshal(scanner.Bytes(), &rec) != nil {
+			continue
+		}
+		if !since.IsZero() {
+			ts, err := time.Parse(time.RFC3339, rec.TS)
+			if err != nil || ts.Before(since) {
+				continue
+			}
+		}
+		key := rec.Client + "\x00" + rec.Model
+		g := groups[key]
+		if g == nil {
+			g = &usageTotal{Client: rec.Client, Model: rec.Model}
+			groups[key] = g
+		}
+		for _, t := range []*usageTotal{g, &all} {
+			t.Calls++
+			if rec.Status >= 400 || rec.Status == 0 {
+				t.Failed++
+			}
+			t.Input += rec.Input
+			t.Output += rec.Output
+			t.CacheRead += rec.CacheRead
+			t.CacheWrite += rec.CacheWrite
+			t.Total += rec.Input + rec.Output + rec.CacheRead + rec.CacheWrite
+		}
+	}
+	var list []usageTotal
+	for _, g := range groups {
+		list = append(list, *g)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Total != list[j].Total {
+			return list[i].Total > list[j].Total
+		}
+		return list[i].Client+list[i].Model < list[j].Client+list[j].Model
+	})
+	return list, all, scanner.Err()
+}
+
+func groupDigits(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+func proxyUsage(args []string, out io.Writer, home string) error {
+	flags := flag.NewFlagSet("proxy usage", flag.ContinueOnError)
+	flags.SetOutput(out)
+	window := flags.Duration("since", 24*time.Hour, "khoảng thời gian, ví dụ 1h, 24h, 168h (7 ngày)")
+	all := flags.Bool("all", false, "toàn bộ log")
+	file := flags.String("log", "", "đọc file log khác")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("cách dùng: setup-gateway proxy usage [-since 24h | -all]")
+	}
+	path := *file
+	if path == "" {
+		path = proxyLogPath(home)
+	}
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(out, "Chưa có dữ liệu. Chạy proxy start, rồi mở app bằng proxy run claude.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	since := time.Now().Add(-*window)
+	label := "trong " + window.String()
+	if *all {
+		since, label = time.Time{}, "toàn bộ"
+	}
+	list, total, err := summarizeUsage(f, since)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Token đã dùng (%s) - %s\n\n", label, path)
+	if total.Calls == 0 {
+		fmt.Fprintln(out, "Không có lượt gọi nào trong khoảng này.")
+		return nil
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(w, "APP\tMODEL\tLƯỢT\tLỖI\tVÀO\tRA\tĐỌC CACHE\tGHI CACHE\tTỔNG\t")
+	row := func(t usageTotal) {
+		fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t\n", t.Client, t.Model, t.Calls, t.Failed,
+			groupDigits(t.Input), groupDigits(t.Output), groupDigits(t.CacheRead), groupDigits(t.CacheWrite), groupDigits(t.Total))
+	}
+	for _, t := range list {
+		row(t)
+	}
+	total.Client, total.Model = "TỔNG", ""
+	row(total)
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "\nVÀO = token prompt mới; ĐỌC CACHE thường rẻ hơn nhiều so với VÀO. Giá thật do gateway quyết định.")
+	return nil
+}
+
+func proxyStatus(out io.Writer, home string) error {
+	check := func(ok bool, good, bad string) {
+		mark, text := "[ ]", bad
+		if ok {
+			mark, text = "[x]", good
+		}
+		fmt.Fprintln(out, " ", mark, text)
+	}
+	bin := findMitm(home, "mitmdump")
+	check(bin != "", "mitmproxy: "+bin, "mitmproxy chưa cài -> setup-gateway proxy setup (hoặc cứ chạy proxy run claude, tool tự cài)")
+	_, err := os.Stat(mitmCAPath(home))
+	check(err == nil, "chứng chỉ CA: "+mitmCAPath(home), "chưa có chứng chỉ CA -> setup-gateway proxy setup")
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", defaultProxyPort), time.Second)
+	if conn != nil {
+		conn.Close()
+	}
+	check(err == nil, fmt.Sprintf("proxy đang chạy ở 127.0.0.1:%d", defaultProxyPort), fmt.Sprintf("proxy chưa chạy ở cổng %d -> setup-gateway proxy start", defaultProxyPort))
+	info, err := os.Stat(proxyLogPath(home))
+	check(err == nil, fmt.Sprintf("log: %s (%d KB)", proxyLogPath(home), sizeKB(info)), "chưa có log -> mở app bằng proxy run claude")
+	return nil
+}
+
+func sizeKB(info os.FileInfo) int64 {
+	if info == nil {
+		return 0
+	}
+	return (info.Size() + 1023) / 1024
+}
+
+// proxyMenu is the interactive entry; starting the proxy opens its own window on
+// Windows so the menu stays usable and Ctrl+C there does not close the menu.
+func proxyMenu(input io.Reader, out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	_ = proxyStatus(out, home)
+	fmt.Fprintln(out, "\n  1. Mở Claude qua proxy (tự cài + tự bật proxy)\n  2. Mở Codex qua proxy (tự cài + tự bật proxy)\n  3. Xem token đã dùng (24 giờ)\n  4. Xem token đã dùng (7 ngày)\n  5. Cài mitmproxy + tạo chứng chỉ\n  6. Bật proxy chạy lâu (cửa sổ riêng)\n  7. Hướng dẫn\n  0. Quay lại")
+	switch menuAnswer(input, out, "Chọn [0-7]") {
+	case "1":
+		return proxyRun([]string{"claude"}, input, out, home)
+	case "2":
+		return proxyRun([]string{"codex"}, input, out, home)
+	case "3":
+		return proxyUsage(nil, out, home)
+	case "4":
+		return proxyUsage([]string{"-since", "168h"}, out, home)
+	case "5":
+		return proxySetup(nil, input, out, home)
+	case "6":
+		if _, err := ensureMitm(home, "mitmdump", false, input, out); err != nil {
+			return err
+		}
+		if runtime.GOOS != "windows" {
+			fmt.Fprintln(out, "Mở terminal khác và chạy: setup-gateway proxy start")
+			return nil
+		}
+		self, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Đã mở cửa sổ proxy riêng. Đóng cửa sổ đó để tắt proxy.")
+		return exec.Command("cmd.exe", "/c", "start", "setup-gateway proxy", self, "proxy", "start").Run()
+	case "7":
+		fmt.Fprintln(out, proxyHelp)
+	}
+	return nil
+}
