@@ -39,7 +39,25 @@ Hiện tối đa 20 project:
   session Codex nghỉ lâu hơn sẽ tạm ẩn cho đến lượt dùng tiếp theo.
 
 Chấm xanh là project vừa dùng token trong 2 phút. Số token của mỗi dòng tính trong khoảng
-đang xem (mặc định 24 giờ).
+đang xem (mặc định 24 giờ). Dòng đầu là tổng cả máy, ví dụ `24h 7.7M · 7d 173.6M · 30d 812.1M`.
+
+Nền overlay trong suốt để thấy phần bên dưới, chữ vẫn rõ nét.
+
+Bấm đúp vào overlay (hoặc chuột phải, chọn Mở rộng) để xem báo cáo: app, lần dùng gần nhất,
+model, token vào, ra, cache của từng project, thêm cả project đã đóng trong khoảng đang xem
+và tổng cả máy. Bấm đúp lần nữa để thu gọn. Mỗi lần mở overlay đều bắt đầu ở dạng thu gọn.
+
+## Cảnh báo
+
+```text
+wj overlay -warn 5M
+```
+
+Dòng tổng hiện `16.5M/5M`, chuyển vàng từ 80% ngưỡng và đỏ khi vượt. Ngưỡng do mình tự đặt, tính
+trên tổng cả máy trong khoảng đang xem (`-since`). Mặc định không cảnh báo.
+
+Đây không phải limit thật của nhà cung cấp. Số token không cho biết còn lại bao nhiêu: gói Claude
+xem bằng `/usage`, còn gateway xem trên trang của gateway.
 
 Kéo để đổi chỗ, chuột phải để đóng. Vị trí được lưu cho lần mở sau. Hiện chỉ có trên
 Windows; macOS và Linux dùng `wj top` trong một cửa sổ terminal nhỏ.

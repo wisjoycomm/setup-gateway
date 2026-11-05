@@ -41,27 +41,11 @@ Neu chi co source Git, xem muc Build o cuoi file nay.
 Menu:
 
 ```text
- CÀI ĐẶT
-   1. Cài máy mới (hỏi từng bước, chọn cái mình cần)
-   2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
-   3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
-   4. Cài quản lý cửa sổ (không bắt buộc)
-  14. Setup project: rule chung + rule theo job (Unity, web...), skill Orca
- KẾT NỐI / ĐĂNG NHẬP
-   5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
-   6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
-   7. Đổi kết nối Claude đã lưu (profile)
- KIỂM TRA
-   8. Xem ứng dụng đã cài
-  15. Xem token mọi project, cập nhật liên tục (wj top)
-  16. Bật overlay token luôn nổi trên màn hình (wj overlay)
-   9. Đo token qua mitmproxy (cho app khác Claude/Codex)
-  13. Xem các agent có khớp cấu hình không (wj check)
-  17. Lấy lại danh sách model từ gateway (wj models)
- CẬP NHẬT / GỠ
-  10. Cập nhật ứng dụng
-  11. Cập nhật wj
-  12. Gỡ bộ công cụ / quản lý cửa sổ
+   1. Cài máy mới (hỏi từng bước)
+   2. Setup project (rule, skill Orca)
+   3. AI Agent (kết nối, model, xem token, kiểm tra cấu hình)
+   4. Ứng dụng (cài, cập nhật, công cụ dòng lệnh)
+   5. Cập nhật wj
 
    h. Hướng dẫn nhanh      0. Thoát
 ```

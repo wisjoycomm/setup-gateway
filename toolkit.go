@@ -91,32 +91,69 @@ func menuAnswer(input io.Reader, out io.Writer, label string) string {
 const mainMenuText = `
 Wisjoy wj %s
 
- CÀI ĐẶT
-   1. Cài máy mới (hỏi từng bước, chọn cái mình cần)
-   2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
-   3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
-   4. Cài quản lý cửa sổ (không bắt buộc)
-  14. Setup project: rule chung + rule theo job (Unity, web...), skill Orca
- KẾT NỐI / ĐĂNG NHẬP
-   5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
-   6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
-   7. Đổi kết nối Claude đã lưu (profile)
- KIỂM TRA
-   8. Xem ứng dụng đã cài
-  15. Xem token mọi project, cập nhật liên tục (wj top)
-  16. Bật overlay token luôn nổi trên màn hình (wj overlay)
-   9. Đo token qua mitmproxy (cho app khác Claude/Codex)
-  13. Xem các agent có khớp cấu hình không (wj check)
-  17. Lấy lại danh sách model từ gateway (wj models)
- CẬP NHẬT / GỠ
-  10. Cập nhật ứng dụng
-  11. Cập nhật wj
-  12. Gỡ bộ công cụ / quản lý cửa sổ
+   1. Cài máy mới (hỏi từng bước)
+   2. Setup project (rule, skill Orca)
+   3. AI Agent (kết nối, model, xem token, kiểm tra cấu hình)
+   4. Ứng dụng (cài, cập nhật, công cụ dòng lệnh)
+   5. Cập nhật wj
 
    h. Hướng dẫn nhanh      0. Thoát
 `
 
-const menuPrompt = "Chọn [0-17, h]"
+const menuPrompt = "Chọn [0-5, h]"
+
+type menuItem struct {
+	label string
+	run   func() error
+}
+
+// subMenu runs one choice and goes back; 0 or Enter goes back without doing anything.
+func subMenu(title string, items []menuItem, input io.Reader, out io.Writer) error {
+	fmt.Fprintln(out, "\n"+title)
+	for i, item := range items {
+		fmt.Fprintf(out, "  %d. %s\n", i+1, item.label)
+	}
+	fmt.Fprintln(out, "  0. Quay lại")
+	answer := menuAnswer(input, out, fmt.Sprintf("Chọn [0-%d]", len(items)))
+	if answer == "" || answer == "0" {
+		return nil
+	}
+	for i, item := range items {
+		if answer == fmt.Sprint(i+1) {
+			return item.run()
+		}
+	}
+	fmt.Fprintln(out, "Không có mục này.")
+	return nil
+}
+
+func agentMenu(input io.Reader, out io.Writer) error {
+	return subMenu("AI Agent", []menuItem{
+		{"Kết nối một agent (gateway, API key, đăng nhập)", func() error { return configureClient(nil, input, out) }},
+		{"Đổi sang kết nối Claude đã lưu", func() error { return pickProfile(input, out) }},
+		{"Lấy lại danh sách model từ gateway (wj models)", func() error { return runApp([]string{"models"}, input, out) }},
+		{"Thử model nào dùng được, tốn vài token (wj models test)", func() error { return runApp([]string{"models", "test"}, input, out) }},
+		{"Kiểm tra cấu hình các agent có khớp không (wj check)", func() error { return runCheck(nil, out) }},
+		{"Xem token: bảng trực tiếp mọi project (wj top)", func() error { return runTop(nil, out) }},
+		{"Xem token: overlay luôn nổi trên màn hình (wj overlay)", func() error { return runApp([]string{"overlay"}, input, out) }},
+		{"Xem token: bảng chi tiết 30 ngày (wj usage)", func() error { return runUsage([]string{"-since", "720h"}, out) }},
+		{"Xem token: đo qua mitmproxy, cho app khác Claude/Codex", func() error { return proxyMenu(input, out) }},
+	}, input, out)
+}
+
+func appsMenu(input io.Reader, out io.Writer) error {
+	tool := func(args ...string) func() error {
+		return func() error { return runToolkit(args, input, out) }
+	}
+	return subMenu("Ứng dụng", []menuItem{
+		{"Cài thêm ứng dụng (hiện danh sách đã cài trước khi chọn)", func() error { return appMenu("install", input, out) }},
+		{"Cập nhật ứng dụng", func() error { return appMenu("update", input, out) }},
+		{"Cài công cụ dòng lệnh (terminal, git, node, python...)", tool("install", "cli")},
+		{"Cài quản lý cửa sổ (không bắt buộc)", tool("install", "wm")},
+		{"Gỡ công cụ dòng lệnh", tool("uninstall", "cli")},
+		{"Gỡ quản lý cửa sổ", tool("uninstall", "wm")},
+	}, input, out)
+}
 
 func mainMenu(input io.Reader, out io.Writer) error {
 	for {
@@ -128,48 +165,19 @@ func mainMenu(input io.Reader, out io.Writer) error {
 		case "1":
 			err = onboard(input, out)
 		case "2":
-			err = appMenu("install", input, out)
+			err = initMenu(input, out)
 		case "3":
-			err = runToolkit([]string{"install", "cli"}, input, out)
+			err = agentMenu(input, out)
 		case "4":
-			err = runToolkit([]string{"install", "wm"}, input, out)
+			err = appsMenu(input, out)
 		case "5":
-			err = configureClient([]string{"claude"}, input, out)
-		case "6":
-			err = configureClient(nil, input, out)
-		case "7":
-			err = pickProfile(input, out)
-		case "8":
-			err = newAppManager().run(nil, input, out)
-		case "9":
-			err = proxyMenu(input, out)
-		case "10":
-			err = appMenu("update", input, out)
-		case "11":
 			if yes(menuAnswer(input, out, "Tải bản wj mới nhất? [y/N]")) {
 				err = updateSelf(nil, out)
 			}
-		case "12":
-			switch menuAnswer(input, out, "Gỡ gì? 1 = bộ công cụ dòng lệnh, 2 = quản lý cửa sổ, Enter = quay lại") {
-			case "1":
-				err = runToolkit([]string{"uninstall", "cli"}, input, out)
-			case "2":
-				err = runToolkit([]string{"uninstall", "wm"}, input, out)
-			}
-		case "13":
-			err = runCheck(nil, out)
-		case "14":
-			err = initMenu(input, out)
-		case "15":
-			err = runTop(nil, out)
-		case "16":
-			err = runApp([]string{"overlay"}, input, out)
-		case "17":
-			err = runApp([]string{"models"}, input, out)
 		case "h", "?", "help":
 			err = printHelp(nil, input, out)
 		default:
-			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 17, hoặc h để xem hướng dẫn.")
+			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 5, hoặc h để xem hướng dẫn.")
 		}
 		if err != nil {
 			fmt.Fprintln(out, "Lỗi:", err)
