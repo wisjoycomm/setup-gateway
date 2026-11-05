@@ -11,6 +11,7 @@ wj top -once              in một lần
 wj overlay                cửa sổ nhỏ luôn nổi trên màn hình
 wj overlay stop           đóng overlay
 wj usage                  bảng chi tiết theo project + app
+wj usage -by project-model   từng model trong mỗi project
 wj usage -by app          theo app + model; còn có -by project, -by model
 wj usage -project game -app codex
 ```
@@ -44,8 +45,10 @@ Chấm xanh là project vừa dùng token trong 2 phút. Số token của mỗi 
 Nền overlay trong suốt để thấy phần bên dưới, chữ vẫn rõ nét.
 
 Bấm đúp vào overlay (hoặc chuột phải, chọn Mở rộng) để xem báo cáo: app, lần dùng gần nhất,
-model, token vào, ra, cache của từng project, thêm cả project đã đóng trong khoảng đang xem
-và tổng cả máy. Bấm đúp lần nữa để thu gọn. Mỗi lần mở overlay đều bắt đầu ở dạng thu gọn.
+model, token vào, ra, cache và số tiền quy đổi của từng project, thêm cả project đã đóng trong
+khoảng đang xem và tổng cả máy. Project dùng nhiều model có thêm một dòng cho mỗi model; nếu có
+quá nhiều dòng thì project đó chỉ ghi `3 model`, xem đủ bằng `wj usage -by project-model`.
+Bấm đúp lần nữa để thu gọn. Mỗi lần mở overlay đều bắt đầu ở dạng thu gọn.
 
 ## Cảnh báo
 
@@ -68,6 +71,21 @@ Windows; macOS và Linux dùng `wj top` trong một cửa sổ terminal nhỏ.
 - **RA**: token trả lời.
 - **ĐỌC CACHE**: thường rẻ hơn nhiều so với VÀO, và thường chiếm phần lớn TỔNG.
 - **TỔNG**: cộng cả bốn loại, nên không phải số tiền. Giá thật do gateway quyết định.
+- **QUY ĐỔI** (`≈USD` trên overlay): số tiền nếu trả theo giá API niêm yết.
+
+## Quy đổi tiền
+
+Chỉ có trong `wj usage` và overlay mở rộng, không có ở `wj top` hay overlay thu gọn.
+
+Đây là phép quy đổi, không phải số tiền thật phải trả: gói Pro/Max là phí cố định, còn gateway
+có giá riêng. Dùng để so sánh project và model với nhau.
+
+- Mỗi lượt gọi tính theo đúng model, loại token, cache 5 phút hay 1 giờ, và mức giá theo độ dài prompt.
+- Bảng giá lấy từ danh sách công khai của OpenRouter, nhúng sẵn trong `wj` nên không gọi mạng.
+  Ngày của bảng giá in dưới bảng. Cập nhật cùng bản phát hành bằng `scripts/update-prices.sh`.
+- Model không có trong bảng giá không bị đoán: `?` là chưa có giá, `$12.00+` là còn token chưa
+  tính. Model có tên riêng của gateway thường rơi vào trường hợp này.
+- Không tính fast mode, batch, inference theo vùng và phí công cụ như web search.
 
 ## So với /usage của Claude Code
 

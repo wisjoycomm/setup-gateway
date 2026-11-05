@@ -29,12 +29,15 @@ const (
 	activeWindow   = 2 * time.Minute
 	runningWindow  = 10 * time.Minute
 	overlayMaxRows = 20
+	// overlayMaxLines also counts the per-model lines of the expanded report.
+	overlayMaxLines = 32
 )
 
 type sessionCall struct {
 	When                                 time.Time
 	Project, App, Model                  string
 	Input, Output, CacheRead, CacheWrite int64
+	CacheWrite1h                         int64 // the part of CacheWrite kept for an hour, which costs more
 }
 
 type sessionFile struct {
@@ -147,6 +150,9 @@ func (s *sessionScanner) readClaudeLine(path string, state *sessionFile, raw []b
 				Output     int64 `json:"output_tokens"`
 				CacheRead  int64 `json:"cache_read_input_tokens"`
 				CacheWrite int64 `json:"cache_creation_input_tokens"`
+				Creation   struct {
+					OneHour int64 `json:"ephemeral_1h_input_tokens"`
+				} `json:"cache_creation"`
 			} `json:"usage"`
 		} `json:"message"`
 	}
@@ -170,6 +176,7 @@ func (s *sessionScanner) readClaudeLine(path string, state *sessionFile, raw []b
 	s.record("claude\x00"+key, sessionCall{
 		When: when, Project: s.projectOf(line.Cwd), App: "claude", Model: line.Message.Model,
 		Input: usage.Input, Output: usage.Output, CacheRead: usage.CacheRead, CacheWrite: usage.CacheWrite,
+		CacheWrite1h: usage.Creation.OneHour,
 	})
 }
 
@@ -309,6 +316,8 @@ type usageRow struct {
 	Apps      []string
 	LastModel string
 	Last      time.Time
+	Cost      float64 // list price of the priced calls, in USD
+	Unpriced  int64   // tokens of models with no known price
 }
 
 func (s *sessionScanner) summarize(f usageFilter) ([]usageRow, usageRow) {
@@ -337,7 +346,12 @@ func (s *sessionScanner) summarize(f usageFilter) ([]usageRow, usageRow) {
 			g = &row
 			groups[key] = g
 		}
+		cost, priced := callCost(call)
 		for _, t := range []*usageRow{g, &all} {
+			t.Cost += cost
+			if !priced {
+				t.Unpriced += call.Input + call.Output + call.CacheRead + call.CacheWrite
+			}
 			t.Calls++
 			t.Input += call.Input
 			t.Output += call.Output
@@ -369,7 +383,7 @@ func runUsage(args []string, out io.Writer) error {
 	flags.SetOutput(out)
 	window := flags.Duration("since", 24*time.Hour, "khoảng thời gian, ví dụ 1h, 24h, 168h (7 ngày)")
 	all := flags.Bool("all", false, "toàn bộ phiên còn lưu trên máy")
-	by := flags.String("by", "project-app", "gom theo: project, project-app, app (app + model), model")
+	by := flags.String("by", "project-app", "gom theo: project, project-app, project-model, app (app + model), model")
 	project := flags.String("project", "", "chỉ tính một project")
 	client := flags.String("app", "", "chỉ tính một app: claude, codex")
 	if err := flags.Parse(args); err != nil {
@@ -379,16 +393,17 @@ func runUsage(args []string, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("cách dùng: wj usage [-since 24h | -all] [-by project|project-app|app|model] [-project TÊN] [-app claude|codex]")
+		return errors.New("cách dùng: wj usage [-since 24h | -all] [-by project|project-app|project-model|app|model] [-project TÊN] [-app claude|codex]")
 	}
 	groupBy, ok := map[string][]string{
-		"app":         {"client", "model"},
-		"project":     {"project"},
-		"project-app": {"project", "client"},
-		"model":       {"model"},
+		"app":           {"client", "model"},
+		"project":       {"project"},
+		"project-app":   {"project", "client"},
+		"project-model": {"project", "model"},
+		"model":         {"model"},
 	}[*by]
 	if !ok {
-		return errors.New("-by chỉ nhận: project, project-app, app, model")
+		return errors.New("-by chỉ nhận: project, project-app, project-model, app, model")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -413,7 +428,7 @@ func runUsage(args []string, out io.Writer) error {
 	for _, dim := range groupBy {
 		head = append(head, headers[dim])
 	}
-	fmt.Fprintln(w, strings.Join(head, "\t")+"\tLƯỢT\tVÀO\tRA\tĐỌC CACHE\tGHI CACHE\tTỔNG\t")
+	fmt.Fprintln(w, strings.Join(head, "\t")+"\tLƯỢT\tVÀO\tRA\tĐỌC CACHE\tGHI CACHE\tTỔNG\tQUY ĐỔI\t")
 	row := func(t usageRow, first string) {
 		var cells []string
 		for i, dim := range groupBy {
@@ -426,8 +441,8 @@ func runUsage(args []string, out io.Writer) error {
 			}
 			cells = append(cells, value)
 		}
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n", strings.Join(cells, "\t"), t.Calls,
-			groupDigits(t.Input), groupDigits(t.Output), groupDigits(t.CacheRead), groupDigits(t.CacheWrite), groupDigits(t.Total))
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t\n", strings.Join(cells, "\t"), t.Calls,
+			groupDigits(t.Input), groupDigits(t.Output), groupDigits(t.CacheRead), groupDigits(t.CacheWrite), groupDigits(t.Total), costText(t))
 	}
 	for _, t := range list {
 		row(t, "")
@@ -437,13 +452,17 @@ func runUsage(args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(out, "\nVÀO = token prompt mới; ĐỌC CACHE thường rẻ hơn nhiều so với VÀO. App khác (OpenCode...) đo bằng: wj proxy usage")
+	fmt.Fprintf(out, "QUY ĐỔI (USD) = nếu trả theo giá API niêm yết ngày %s. Không phải số tiền thật: gói Pro/Max là phí cố định, gateway có giá riêng.\n", pricesAsOf)
+	if total.Unpriced > 0 {
+		fmt.Fprintf(out, "Có %s token của model chưa có trong bảng giá, không được tính vào QUY ĐỔI (dấu + hoặc ?).\n", groupDigits(total.Unpriced))
+	}
 	return nil
 }
 
 func compactTokens(n int64) string {
 	switch {
 	case n >= 1_000_000_000:
-		return fmt.Sprintf("%.1fG", float64(n)/1e9)
+		return fmt.Sprintf("%.1fB", float64(n)/1e9)
 	case n >= 1_000_000:
 		return fmt.Sprintf("%.1fM", float64(n)/1e6)
 	case n >= 1_000:
@@ -553,7 +572,8 @@ func runningProjects(list []usageRow, open []string, now time.Time) []usageRow {
 	return rows
 }
 
-// parseTokenCount reads a number of tokens such as 5M, 500k, 1.5G or 20000.
+// parseTokenCount reads a number of tokens such as 5M, 500k, 1.5B or 20000. G still
+// means the same as B, for limits written before the display changed.
 func parseTokenCount(text string) (int64, error) {
 	number := strings.TrimSpace(text)
 	scale := 1.0
@@ -563,7 +583,7 @@ func parseTokenCount(text string) (int64, error) {
 			scale = 1e3
 		case 'm', 'M':
 			scale = 1e6
-		case 'g', 'G':
+		case 'b', 'B', 'g', 'G':
 			scale = 1e9
 		}
 		if scale != 1 {
@@ -606,6 +626,44 @@ func overlayDetailRows(running, list []usageRow) []usageRow {
 		}
 	}
 	return rows
+}
+
+// overlayDetailEntry is one line of the expanded overlay: a project, or with Sub one
+// model inside the project above it.
+type overlayDetailEntry struct {
+	usageRow
+	Sub    bool
+	Models int // how many models the project used
+}
+
+// modelsByProject is each project's usage per model, biggest first.
+func (s *sessionScanner) modelsByProject(since time.Time) map[string][]usageRow {
+	list, _ := s.summarize(usageFilter{Since: since, GroupBy: []string{"project", "model"}})
+	models := map[string][]usageRow{}
+	for _, row := range list {
+		models[row.Project] = append(models[row.Project], row)
+	}
+	return models
+}
+
+// overlayDetailEntries adds a line per model under each project that used several.
+// Every project keeps its line; the model lines stop at overlayMaxLines so the window
+// still fits a screen, and such a project just says how many models it used.
+func overlayDetailEntries(rows []usageRow, models map[string][]usageRow) []overlayDetailEntry {
+	spare := overlayMaxLines - len(rows)
+	entries := make([]overlayDetailEntry, 0, len(rows))
+	for _, row := range rows {
+		used := models[row.Project]
+		entries = append(entries, overlayDetailEntry{usageRow: row, Models: len(used)})
+		if len(used) < 2 || len(used) > spare {
+			continue
+		}
+		spare -= len(used)
+		for _, model := range used {
+			entries = append(entries, overlayDetailEntry{usageRow: model, Sub: true})
+		}
+	}
+	return entries
 }
 
 func shortWindow(d time.Duration) string {

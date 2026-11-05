@@ -92,6 +92,7 @@ var (
 	getSystemMetrics    = user32.NewProc("GetSystemMetrics")
 	getCursorPos        = user32.NewProc("GetCursorPos")
 	monitorFromRect     = user32.NewProc("MonitorFromRect")
+	getMonitorInfo      = user32.NewProc("GetMonitorInfoW")
 	createPopupMenu     = user32.NewProc("CreatePopupMenu")
 	appendMenu          = user32.NewProc("AppendMenuW")
 	trackPopupMenu      = user32.NewProc("TrackPopupMenu")
@@ -141,6 +142,12 @@ type winClassEx struct {
 	IconSm     uintptr
 }
 
+type winMonitorInfo struct {
+	Size          uint32
+	Monitor, Work winRect
+	Flags         uint32
+}
+
 type winBitmapInfo struct {
 	Size          uint32
 	Width, Height int32
@@ -156,10 +163,11 @@ type overlayLine struct {
 	Project, Tokens string
 	Active          bool
 	Detail          []string // extra columns, between Project and Tokens, when expanded
+	Cost            string   // last column, only when expanded
 }
 
 // Columns from overlayFirstNumber on are right aligned when expanded.
-var overlayDetailHeading = []string{"Project", "App", "Lúc", "Model", "Vào", "Ra", "Cache", "Tổng"}
+var overlayDetailHeading = []string{"Project", "App", "Lúc", "Model", "Vào", "Ra", "Cache", "Tổng", "≈USD"}
 
 const overlayFirstNumber = 4
 
@@ -169,7 +177,7 @@ func (line overlayLine) cells(expanded bool) []string {
 	}
 	cells := []string{line.Project}
 	cells = append(cells, line.Detail...)
-	return append(cells, line.Tokens)
+	return append(cells, line.Tokens, line.Cost)
 }
 
 // overlayFrame is everything one render needs, copied under the lock.
@@ -276,8 +284,8 @@ func overlayLoop(window time.Duration, home string) error {
 	dpi, _, _ := getDeviceCaps.Call(hdc, logPixelsY)
 	releaseDC.Call(hwnd, hdc)
 	overlay.scale = float64(dpi) / 96
-	overlay.font = overlayFont(8, 400, dpi)
-	overlay.bold = overlayFont(8, 600, dpi)
+	overlay.font = overlayFont(10, 400, dpi)
+	overlay.bold = overlayFont(10, 600, dpi)
 
 	go overlayFeed(window, home, hwnd)
 
@@ -319,10 +327,11 @@ func overlayFeed(window time.Duration, home string, hwnd uintptr) {
 			lines = append(lines, overlayLine{Project: cutRunes(row.Project, 18), Tokens: compactTokens(row.Total), Active: now.Sub(row.Last) < activeWindow})
 		}
 		var detail []overlayLine
-		for _, row := range overlayDetailRows(running, list) {
-			detail = append(detail, overlayDetailLine(row, now))
+		for _, entry := range overlayDetailEntries(overlayDetailRows(running, list), scanner.modelsByProject(since)) {
+			detail = append(detail, overlayDetailLine(entry, now))
 		}
 		whole := scanner.machineTotals(now)
+		whole += fmt.Sprintf(" · %s ≈%s theo giá API %s", windowTag(window), costText(total), pricesAsOf)
 		shown := compactTokens(total.Total)
 		if overlay.warn > 0 {
 			shown += "/" + compactTokens(overlay.warn)
@@ -336,20 +345,29 @@ func overlayFeed(window time.Duration, home string, hwnd uintptr) {
 	}
 }
 
-func overlayDetailLine(row usageRow, now time.Time) overlayLine {
+func overlayDetailLine(row overlayDetailEntry, now time.Time) overlayLine {
 	ago := "đang mở"
 	if !row.Last.IsZero() {
 		ago = agoText(now.Sub(row.Last))
 	}
-	return overlayLine{
-		Project: cutRunes(row.Project, 32),
-		Tokens:  compactTokens(row.Total),
-		Active:  now.Sub(row.Last) < activeWindow,
+	line := overlayLine{
+		Tokens: compactTokens(row.Total),
+		Cost:   costText(row.usageRow),
 		Detail: []string{
 			strings.Join(row.Apps, "+"), ago, cutRunes(row.LastModel, 20),
 			compactTokens(row.Input), compactTokens(row.Output), compactTokens(row.CacheRead + row.CacheWrite),
 		},
 	}
+	if row.Sub {
+		line.Detail[2] = cutRunes(row.Model, 20)
+		return line
+	}
+	line.Project = cutRunes(row.Project, 32)
+	line.Active = now.Sub(row.Last) < activeWindow
+	if row.Models > 1 {
+		line.Detail[2] = fmt.Sprintf("%d model", row.Models)
+	}
+	return line
 }
 
 func overlayToggle(hwnd uintptr) {
@@ -431,9 +449,9 @@ func (o *overlayView) px(v int) int32 { return int32(float64(v) * o.scale) }
 
 func overlayMeasure(hdc uintptr, f overlayFrame) overlayLayout {
 	selectObject.Call(hdc, overlay.font)
-	l := overlayLayout{pad: overlay.px(6), gap: overlay.px(10)}
+	l := overlayLayout{pad: overlay.px(8), gap: overlay.px(14)}
 	_, textHeight := textWidth(hdc, "Ag")
-	l.rowHeight = textHeight + overlay.px(1)
+	l.rowHeight = textHeight + overlay.px(3)
 	l.dot, _ = textWidth(hdc, "● ")
 	measure := func(cells []string) {
 		if l.columns == nil {
@@ -565,6 +583,12 @@ func overlayStartPosition(width int32) (int32, int32) {
 		if json.Unmarshal(data, &saved) == nil {
 			probe := winRect{saved.X, saved.Y, saved.X + 40, saved.Y + 40}
 			if monitor, _, _ := monitorFromRect.Call(uintptr(unsafe.Pointer(&probe)), 0); monitor != 0 {
+				var info winMonitorInfo
+				info.Size = uint32(unsafe.Sizeof(info))
+				getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
+				if over := saved.X + width - info.Work.Right; info.Work.Right != 0 && over > 0 {
+					saved.X -= over // saved when the window was narrower
+				}
 				return saved.X, saved.Y
 			}
 		}
@@ -627,7 +651,7 @@ func overlayDraw(hdc uintptr, l overlayLayout, f overlayFrame, asMask bool) {
 		}
 		cells := line.cells(f.expanded)
 		row(cells, func(column int) uint32 {
-			if column == 0 || column == len(cells)-1 {
+			if column == 0 || column >= len(cells)-1 {
 				return textColor
 			}
 			return mutedColor
