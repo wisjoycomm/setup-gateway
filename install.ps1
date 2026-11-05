@@ -7,12 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$repo = "wisjoycomm/setup-gateway"
+$repo = "wisjoycomm/wj"
 $dir = if ($InstallDir) { [IO.Path]::GetFullPath($InstallDir) } else { Join-Path $env:USERPROFILE ".local\bin" }
 $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 $asset = switch ($arch) {
-    "AMD64" { "setup-gateway.exe" }
-    "ARM64" { "setup-gateway-windows-arm64.exe" }
+    "AMD64" { "wj.exe" }
+    "ARM64" { "wj-windows-arm64.exe" }
     default { throw "Unsupported Windows architecture: $arch. Use 64-bit Windows." }
 }
 $releaseUrl = if ($Version -eq "latest") {
@@ -20,13 +20,13 @@ $releaseUrl = if ($Version -eq "latest") {
 } else {
     "https://api.github.com/repos/$repo/releases/tags/$([uri]::EscapeDataString($Version))"
 }
-$release = Invoke-RestMethod -Uri $releaseUrl -Headers @{ "User-Agent" = "setup-gateway-installer" }
+$release = Invoke-RestMethod -Uri $releaseUrl -Headers @{ "User-Agent" = "wj-installer" }
 $binary = @($release.assets | Where-Object name -eq $asset)
 $checksumAsset = @($release.assets | Where-Object name -eq "checksums.txt")
 if ($binary.Count -ne 1) { throw "Release $($release.tag_name) has no $asset build." }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$dest = Join-Path $dir "setup-gateway.exe"
-$download = Join-Path $dir (".setup-gateway-" + [guid]::NewGuid().ToString("N") + ".tmp")
+$dest = Join-Path $dir "wj.exe"
+$download = Join-Path $dir (".wj-" + [guid]::NewGuid().ToString("N") + ".tmp")
 function Get-InstallerHash([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     $hasher = [Security.Cryptography.SHA256]::Create()
@@ -81,7 +81,7 @@ namespace Wisjoy {
     if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$dir;$env:Path" }
 }
 Write-Host "Installed $($release.tag_name): $dest (SHA-256 verified)"
-Write-Host "Run setup-gateway locally to manage apps, tools and logins. Use setup-gateway update only when you want a new release."
+Write-Host "Run wj locally to manage apps, tools and logins. Use wj update only when you want a new release."
 if ($RunSetup) {
     & $dest
     if ($LASTEXITCODE -ne 0) { throw "Setup exited with code $LASTEXITCODE. Run the installed tool again to retry." }

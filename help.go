@@ -6,36 +6,45 @@ import (
 	"strings"
 )
 
-const helpMain = `setup-gateway - cài và kết nối công cụ lập trình AI cho máy mới
+const helpMain = `wj - cài và kết nối công cụ lập trình AI cho máy mới
 
 CÁCH DÙNG NHANH
-  setup-gateway                 mở menu, chọn bằng số (dễ nhất)
-  setup-gateway help CHỦ_ĐỀ     xem hướng dẫn chi tiết một chủ đề
+  wj                 mở menu, chọn bằng số (dễ nhất)
+  wj help CHỦ_ĐỀ     xem hướng dẫn chi tiết một chủ đề
 
 CHỦ ĐỀ HƯỚNG DẪN
   help claude    kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
   help codex     kết nối Codex CLI / OpenCode
-  help proxy     đo token đã dùng bằng mitmproxy
+  help usage     xem token mọi project: wj usage, wj top, wj overlay
+  help models    lấy model từ gateway, Claude Code/Codex dùng chéo model được không
+  help proxy     đo token bằng mitmproxy (cho app khác Claude/Codex)
   help apps      cài / cập nhật ứng dụng
   help tools     bộ công cụ dòng lệnh, quản lý cửa sổ
-  help words     giải thích các từ hay gặp (gateway, token, profile...)
+  help init      setup ban đầu cho một project (rule chung, rule theo job, skill Orca)
+  help check     xem các agent có khớp cấu hình không
+  help words    giải thích các từ hay gặp (gateway, token, profile...)
 
 LỆNH HAY DÙNG
-  setup-gateway apps list                   xem app nào đã cài
-  setup-gateway apps install claude,codex   cài app còn thiếu
-  setup-gateway configure claude            kết nối Claude Code
-  setup-gateway configure codex             kết nối Codex
-  setup-gateway -use-profile adnx -run      đổi sang kết nối "adnx" và mở Claude
-  setup-gateway proxy run claude            mở Claude qua mitmproxy (tự cài, tự bật)
-  setup-gateway proxy usage                 xem token đã dùng trong 24 giờ
-  setup-gateway update                      cập nhật chính tool này
-  setup-gateway version                     xem phiên bản
+  wj apps list                   xem app nào đã cài
+  wj apps install claude,codex   cài app còn thiếu
+  wj configure claude            kết nối Claude Code
+  wj configure codex             kết nối Codex
+  wj -use-profile adnx -run      đổi sang kết nối "adnx" và mở Claude
+  wj top                         token mọi project, cập nhật liên tục
+  wj overlay                     token luôn nổi trên màn hình (Windows)
+  wj usage                       bảng token Claude + Codex trong 24 giờ
+  wj models                      lấy lại danh sách model từ gateway
+  wj proxy run claude            mở Claude qua mitmproxy (tự cài, tự bật)
+  wj init                        setup ban đầu cho project đang đứng
+  wj check                       so cấu hình giữa các agent (chỉ đọc)
+  wj update                      cập nhật chính tool này
+  wj version                     xem phiên bản
 
 Thêm -dry-run vào hầu hết lệnh để xem trước, không thay đổi gì.`
 
 const helpClaude = `KẾT NỐI CLAUDE CODE
 
-  setup-gateway configure claude    (hoặc: setup-gateway auth) - hỏi từng bước
+  wj configure claude    (hoặc: wj auth) - hỏi từng bước
 
 Bạn đang có gì?                                    Chọn
   Domain công ty (vd ai.adnx.vn) + key của domain   1. Gateway
@@ -44,10 +53,10 @@ Bạn đang có gì?                                    Chọn
   Tài khoản Claude Pro/Max, đăng nhập trên web      4. Đăng nhập web
 
 Lệnh có sẵn tham số (không phải trả lời câu hỏi):
-  Gateway:   setup-gateway auth -auth gateway -only claude -base-url ai.adnx.vn -profile adnx
-  OAuth:     setup-gateway auth -auth oauth -profile work
-  API key:   setup-gateway auth -auth api-key -profile api
-  Web:       setup-gateway auth -auth login
+  Gateway:   wj auth -auth gateway -only claude -base-url ai.adnx.vn -profile adnx
+  OAuth:     wj auth -auth oauth -profile work
+  API key:   wj auth -auth api-key -profile api
+  Web:       wj auth -auth login
 
 Lưu & đổi kết nối (profile):
   -profile TÊN          lưu kết nối vừa nhập với tên này
@@ -64,9 +73,9 @@ Tham số khác:
   -dry-run              xem trước, không ghi file, không gọi mạng
 
 Model qua gateway: tool lấy danh sách model của gateway, gán Opus/Sonnet/Haiku/Fable
-bản mới nhất, và bật CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY để /model trong
-Claude hiện đủ model gateway đang có. Mỗi lần -use-profile, danh sách model được
-lấy lại từ gateway và lưu vào profile.
+bản mới nhất, bật CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY để Claude tự cập nhật
+model Claude, và thêm model khác (GPT...) vào /model. Mỗi lần -use-profile, danh sách
+được lấy lại và lưu vào profile. Xem thêm: wj help models.
 
 Sau khi đổi: mở phiên Claude MỚI và gõ /status để kiểm tra.
 Tool giữ nguyên hooks, plugin, statusLine; file cũ được sao lưu .bak-<thời gian>.
@@ -76,16 +85,16 @@ chọn mục 2. Cookie sessionKey (sk-ant-sid...) của trình duyệt KHÔNG d�
 
 const helpCodex = `KẾT NỐI CODEX CLI / OPENCODE
 
-  setup-gateway configure codex      hỏi từng bước
-  setup-gateway configure opencode
+  wj configure codex      hỏi từng bước
+  wj configure opencode
 
 Codex có 3 cách:
-  1. Đăng nhập ChatGPT     setup-gateway configure codex -auth login
+  1. Đăng nhập ChatGPT     wj configure codex -auth login
                            (máy không mở được trình duyệt: thêm -device-auth)
-  2. API key OpenAI        setup-gateway configure codex -auth api-key
-  3. Gateway công ty       setup-gateway configure codex -auth gateway -base-url ai.adnx.vn
+  2. API key OpenAI        wj configure codex -auth api-key
+  3. Gateway công ty       wj configure codex -auth gateway -base-url ai.adnx.vn
      Dùng lại gateway đã lưu cho Claude (khỏi nhập key lần nữa):
-                           setup-gateway configure codex -from-profile adnx
+                           wj configure codex -from-profile adnx
 
   Gateway cho Codex phải hỗ trợ /v1/responses. Tool lấy TẤT CẢ model của gateway
   đưa vào /model của Codex (GPT mới nhất đứng đầu, làm mặc định). Chạy lại lệnh
@@ -93,7 +102,7 @@ Codex có 3 cách:
   Chỉ muốn một model: -models cx/gpt-6.1-sol
   Gateway không có /v1/models: thêm -skip-check -models TÊN_MODEL
 
-  Cấu hình ghi vào ~/.codex/config.toml và ~/.codex/setup-gateway-models.json
+  Cấu hình ghi vào ~/.codex/config.toml và ~/.codex/wj-models.json
   (giữ projects, MCP, hooks; có sao lưu).
   Token Claude (sk-ant-...) KHÔNG dùng cho Codex.
 
@@ -108,10 +117,10 @@ Cursor, Antigravity, Orca tự đăng nhập trong app; configure chỉ in hư�
 
 const helpApps = `CÀI / CẬP NHẬT ỨNG DỤNG
 
-  setup-gateway apps list                     app nào đã cài, app nào thiếu (không cần mạng)
-  setup-gateway apps install claude,codex     cài app còn thiếu (bỏ qua app đã có)
-  setup-gateway apps install all -dry-run     xem sẽ cài gì
-  setup-gateway apps update codex,orca        cập nhật (chỉ khi bạn gọi lệnh này)
+  wj apps list                     app nào đã cài, app nào thiếu (không cần mạng)
+  wj apps install claude,codex     cài app còn thiếu (bỏ qua app đã có)
+  wj apps install all -dry-run     xem sẽ cài gì
+  wj apps update codex,orca        cập nhật (chỉ khi bạn gọi lệnh này)
 
 Tên app: claude, codex, opencode, cursor-agent, cursor, antigravity (agy),
          antigravity-ide, orca, mitmproxy
@@ -121,14 +130,83 @@ Cài xong mà gõ lệnh không thấy: đóng terminal, mở cái mới.`
 
 const helpTools = `BỘ CÔNG CỤ DÒNG LỆNH & QUẢN LÝ CỬA SỔ
 
-  setup-gateway tools list                      xem có những nhóm nào
-  setup-gateway tools install cli               cài (hỏi chọn nhóm)
-  setup-gateway tools install cli -groups 1,2,4 chọn sẵn nhóm
-  setup-gateway tools install wm                quản lý cửa sổ kiểu i3
-  setup-gateway tools uninstall cli | wm        gỡ
+  wj tools list                      xem có những nhóm nào
+  wj tools install cli               cài (hỏi chọn nhóm)
+  wj tools install cli -groups 1,2,4 chọn sẵn nhóm
+  wj tools install wm                quản lý cửa sổ kiểu i3
+  wj tools uninstall cli | wm        gỡ
 
 Nhóm: 1 terminal & giao diện   2 tiện ích (rg, fd, bat, lazygit...)
       3 git, node, python, neovim   4 Claude Code, Codex, Antigravity CLI`
+
+const helpCheck = `XEM CÁC AGENT CÓ KHỚP CẤU HÌNH KHÔNG
+
+  wj check    chỉ đọc, không ghi gì, không cần mạng
+
+Với Claude, Codex, Antigravity, Cursor, OpenCode, lệnh cho biết: đã cài chưa, đang
+kết nối kiểu gì, có file chỉ dẫn chung chưa, có MCP server và skill nào. Sau đó liệt
+kê thứ mà agent này có còn agent khác đã cài thì thiếu.
+
+Chỉ hiện tên, không bao giờ hiện key: giá trị trong file cấu hình không được in ra.`
+
+const helpUsage = `XEM TOKEN MỌI PROJECT
+
+Đọc thẳng file phiên của Claude Code và Codex trên máy này. Không cần proxy, không
+gọi mạng, không ghi gì; tính cả phiên mở từ Orca. Các worktree của một repo gộp về
+một project.
+
+  wj top                  bảng trực tiếp, project vừa chạy lên đầu, có tổng cả máy
+                          theo 24 giờ, 7 ngày, 30 ngày, toàn bộ (Ctrl+C để thoát)
+  wj top -once            in một lần
+  wj overlay              cửa sổ nhỏ luôn nổi: mọi project đang mở/đang chạy và tổng cả máy;
+                          project mới tự hiện; kéo để đổi chỗ, chuột phải để đóng
+  wj overlay stop         đóng overlay (overlay hiện chỉ có trên Windows)
+  wj usage                bảng chi tiết theo project + app
+  wj usage -by app        theo app + model; còn có -by project, -by model
+  wj usage -project game -app codex
+  -since 168h             khoảng thời gian (mặc định 24h); wj usage còn có -all
+
+Chỉ tính được khi file phiên còn trên máy. App khác (OpenCode...): wj help proxy.`
+
+const helpModels = `MODEL TỪ GATEWAY
+
+  wj models        lấy lại danh sách và cập nhật mọi app đang nối gateway, dùng key
+                   đã lưu trong từng app; giữ nguyên model mặc định
+  wj models test   gửi một câu ngắn có tool tới từng model, báo app nào dùng được
+                   (tốn vài token, hỏi trước; thêm -models ID1,ID2 để thử vài model)
+
+Tên model giữ nguyên theo danh sách gateway trả về; mỗi gateway đặt tên một kiểu.
+
+Tự động: wj configure, wj auth và -use-profile luôn lấy danh sách mới. Model Claude
+trong Claude Code còn tự cập nhật mỗi lần mở app. Model khác trong Claude Code và danh
+sách của Codex thì cập nhật khi chạy một trong các lệnh trên.
+
+Dùng chéo model:
+  Claude Code chỉ nói /v1/messages, Codex chỉ nói /v1/responses. App chọn được model
+  khác hãng, nhưng gateway phải tự chuyển đổi đường đó. Hãng không hỗ trợ chính thức
+  việc này: có thể lỗi ở tool, suy luận hoặc nén ngữ cảnh. Kiểm tra bằng wj models test.`
+
+const helpInit = `SETUP BAN ĐẦU CHO MỘT PROJECT
+
+  cd vào project, rồi:
+  wj init                     hỏi loại job (tự phát hiện sẵn), cài rule + skill Orca
+  wj init -type unity         chọn sẵn; nhiều loại thì: -type unity,web
+  wj init -dry-run            xem trước, không ghi gì
+
+Loại job: unity, web, go, python. Luôn có rule chung cho mọi agent.
+
+Tool cài:
+  AGENTS.md              rule chung + rule theo job (Claude, Codex, Antigravity đều đọc)
+  CLAUDE.md, PLAN.md     ghi chú riêng cho Claude, kế hoạch task cho Orca
+  .claude/, .agents/     skill Orca và quyền chạy lệnh
+  .gitignore             .tmp/ và thư mục build của job
+
+An toàn khi chạy lại:
+  - File đã có thì giữ nguyên, kể cả skill bạn đã sửa; tool chỉ báo là khác bản kit.
+  - AGENTS.md: chỉ cập nhật phần nằm giữa dấu wj:begin / wj:end, phần bạn tự viết giữ nguyên.
+  - settings.json và .gitignore: chỉ thêm, không xóa; lệnh bạn đã chặn vẫn bị chặn.
+
+Xong thì commit các file này: worker Orca chỉ thấy file đã commit.`
 
 const helpWords = `GIẢI THÍCH TỪ NGỮ
 
@@ -155,19 +233,29 @@ func printHelp(args []string, input io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, helpClaude)
 	case "codex", "opencode", "configure":
 		fmt.Fprintln(out, helpCodex)
-	case "proxy", "mitmproxy", "usage":
+	case "proxy", "mitmproxy":
 		fmt.Fprintln(out, proxyHelp)
 	case "apps", "app":
 		fmt.Fprintln(out, helpApps)
 	case "tools", "tool":
 		fmt.Fprintln(out, helpTools)
+	case "usage", "top", "overlay":
+		_, err := fmt.Fprintln(out, helpUsage)
+		return err
+	case "models", "model":
+		_, err := fmt.Fprintln(out, helpModels)
+		return err
+	case "init":
+		fmt.Fprintln(out, helpInit)
+	case "check":
+		fmt.Fprintln(out, helpCheck)
 	case "words", "terms", "tu":
 		fmt.Fprintln(out, helpWords)
 	case "flags", "all":
 		fmt.Fprintln(out, "Tất cả tham số kết nối Claude:")
 		return runCLI([]string{"-help"}, input, out)
 	default:
-		return fmt.Errorf("không có chủ đề %q; gõ setup-gateway help để xem danh sách", topic)
+		return fmt.Errorf("không có chủ đề %q; gõ wj help để xem danh sách", topic)
 	}
 	return nil
 }

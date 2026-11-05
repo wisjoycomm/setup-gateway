@@ -38,7 +38,7 @@ func writeFile(path, text string, dry bool) error {
 			return closeErr
 		}
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".setup-gateway-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".wj-*")
 	if err != nil {
 		return err
 	}

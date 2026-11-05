@@ -1,4 +1,4 @@
-module setup-gateway
+module wj
 
 go 1.27.1
 

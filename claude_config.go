@@ -92,9 +92,10 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 				env["ANTHROPIC_DEFAULT_"+family+"_MODEL"] = model
 			}
 		}
-		// Claude Code asks the gateway for its model list at every start, so
-		// /model always shows what the gateway currently serves.
+		// Claude Code asks the gateway for its model list at every start but keeps
+		// only Claude ids; the others go into the /model picker from the saved list.
 		env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
+		setClaudePicker(root, p.Models)
 		model := pick(p.Models, []string{"opus"}, []string{"review"})
 		if model == "" {
 			model = pick(p.Models, []string{"sonnet"}, []string{"review"})
@@ -106,7 +107,6 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 			model = p.Models[0]
 		}
 		if model != "" {
-			env["ANTHROPIC_MODEL"] = model
 			root["model"] = model
 		}
 		if sub := pick(p.Models, []string{"haiku"}, nil); sub != "" {

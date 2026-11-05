@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm ci)",
+      "Bash(npm install)",
+      "Bash(npm test *)",
+      "Bash(pnpm install --frozen-lockfile)",
+      "Bash(npx vitest run *)"
+    ]
+  }
+}

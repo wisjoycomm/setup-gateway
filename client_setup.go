@@ -25,7 +25,7 @@ func codexConfigPath(home string) string {
 }
 
 func codexCatalogPath(home string) string {
-	return filepath.Join(filepath.Dir(codexConfigPath(home)), "setup-gateway-models.json")
+	return filepath.Join(filepath.Dir(codexConfigPath(home)), "wj-models.json")
 }
 
 // codexCatalog lists every gateway model in Codex's model picker. GPT models
@@ -120,6 +120,9 @@ func applyCodexModels(home, auth, base, key, model, provider string, ids []strin
 			return "", err
 		}
 		doc["model_catalog_json"] = codexCatalogPath(home)
+		if !dry {
+			_ = os.Remove(filepath.Join(filepath.Dir(codexCatalogPath(home)), legacyName+"-models.json"))
+		}
 	} else if auth != "gateway" {
 		delete(doc, "model_catalog_json")
 	}
@@ -276,7 +279,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("có tham số không hiểu; xem: setup-gateway help codex")
+		return errors.New("có tham số không hiểu; xem: wj help codex")
 	}
 	if *auth == "" && *fromProfile != "" {
 		*auth = "gateway"
@@ -413,8 +416,9 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 				ids = append([]string{model}, ids...)
 			} else if id == "codex" {
 				model := newestModel(ids, "gpt")
+				// Gateways name models their own way: a GPT-style name is only a preference.
 				if model == "" {
-					return errors.New("gateway không có model GPT; nhập tên model dùng cho Codex bằng -models")
+					model = ids[0]
 				}
 				ids = append([]string{model}, ids...)
 			} else if model := defaultChatModel(ids); model != "" {
@@ -426,7 +430,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 	binary := findApp(app, home)
 	needsProcess := id == "codex" && (*auth == "api-key" || *auth == "login" && !*noLogin) || id == "opencode" && *auth == "login" && !*noLogin
 	if needsProcess && binary == "" && !*dry {
-		return fmt.Errorf("máy chưa có %s; cài trước bằng: setup-gateway apps install %s", id, id)
+		return fmt.Errorf("máy chưa có %s; cài trước bằng: wj apps install %s", id, id)
 	}
 	if *dry {
 		fmt.Fprintf(out, "Dry run: sẽ kết nối %s bằng %s; chưa ghi file, chưa gọi mạng, chưa đăng nhập.\n", id, *auth)

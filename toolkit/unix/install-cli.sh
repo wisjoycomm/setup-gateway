@@ -363,6 +363,6 @@ echo
 ok "  Mo cua so terminal moi (hoac go: exec \$SHELL), roi go  tips  de xem cac lenh tat."
 echo "  Nho doi font terminal sang 'JetBrainsMono Nerd Font' de hien icon."
 echo "  Lan dau chay: claude / codex / agy se mo trinh duyet de dang nhap."
-case "$RESULTS" in *" loi"*) warn "  Co phan cai loi: chay lai setup-gateway tools install cli."; exit 1 ;; esac
+case "$RESULTS" in *" loi"*) warn "  Co phan cai loi: chay lai wj tools install cli."; exit 1 ;; esac
 case " $SEL " in *" 3 "*) [ "$OS" = "Linux" ] && has docker && [ "$(id -u)" -ne 0 ] && echo "  Docker: dang xuat / dang nhap lai de dung docker khong can sudo." ;; esac
 exit 0

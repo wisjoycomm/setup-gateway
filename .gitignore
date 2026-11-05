@@ -1,5 +1,8 @@
 /dist/
 /setup-gateway
 /setup-gateway.exe
+/wj
+/wj.exe
+/.tmp/
 *.test
 coverage.out

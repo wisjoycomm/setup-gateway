@@ -109,13 +109,13 @@ func proxyProject(args []string, input io.Reader, out io.Writer, home string) er
 const projectHelp = `Đo token theo từng project (Claude Code)
 
   cd vào thư mục project rồi:
-    setup-gateway proxy project on        bật đo cho project này
-    setup-gateway proxy project off       tắt
-    setup-gateway proxy project list      các project đang bật
+    wj proxy project on        bật đo cho project này
+    wj proxy project off       tắt
+    wj proxy project list      các project đang bật
 
   Sau khi bật, cứ mở claude như bình thường trong project đó (kể cả
   claude --continue / --resume): mọi phiên đều được đếm, không cần proxy run.
-  Cần proxy đang chạy: setup-gateway proxy start  (để cửa sổ đó mở).
+  Cần proxy đang chạy: wj proxy start  (để cửa sổ đó mở).
 
   Tool ghi vào <project>/.claude/settings.local.json (file cá nhân, git bỏ qua),
   không đụng project khác. Codex chưa hỗ trợ cách này: dùng proxy run codex.
@@ -136,7 +136,7 @@ func projectOn(args []string, out io.Writer, home string) error {
 		return err
 	}
 	if flags.NArg() != 0 || *port < 1 || *port > 65535 {
-		return errors.New("cách dùng: setup-gateway proxy project on [-name TÊN] [-port 8877]")
+		return errors.New("cách dùng: wj proxy project on [-name TÊN] [-port 8877]")
 	}
 	start := *dir
 	if start == "" {
@@ -157,7 +157,7 @@ func projectOn(args []string, out io.Writer, home string) error {
 		return errors.New("tên project chỉ gồm chữ, số, _ hoặc - (dùng -name để đặt)")
 	}
 	if _, err := os.Stat(mitmCAPath(home)); err != nil {
-		return errors.New("chưa có chứng chỉ mitmproxy; chạy trước: setup-gateway proxy setup")
+		return errors.New("chưa có chứng chỉ mitmproxy; chạy trước: wj proxy setup")
 	}
 	path := projectSettingsPath(root)
 	doc, err := readJSONObject(path)
@@ -197,10 +197,10 @@ func projectOn(args []string, out io.Writer, home string) error {
 		fmt.Fprintln(out, "  đã thêm .claude/settings.local.json vào", ignored)
 	}
 	if !portOpen(*port) {
-		fmt.Fprintf(out, "Chú ý: proxy chưa chạy ở cổng %d. Mở cửa sổ khác: setup-gateway proxy start\n", *port)
-		fmt.Fprintln(out, "Khi proxy tắt, Claude trong project này sẽ không kết nối được; tắt đo bằng: setup-gateway proxy project off")
+		fmt.Fprintf(out, "Chú ý: proxy chưa chạy ở cổng %d. Mở cửa sổ khác: wj proxy start\n", *port)
+		fmt.Fprintln(out, "Khi proxy tắt, Claude trong project này sẽ không kết nối được; tắt đo bằng: wj proxy project off")
 	}
-	fmt.Fprintln(out, "Mở phiên Claude MỚI trong project (claude, claude --continue...). Xem: setup-gateway proxy usage -project", *name)
+	fmt.Fprintln(out, "Mở phiên Claude MỚI trong project (claude, claude --continue...). Xem: wj proxy usage -project", *name)
 	return nil
 }
 
@@ -216,7 +216,7 @@ func projectOff(args []string, out io.Writer, home string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("cách dùng: setup-gateway proxy project off [-all]")
+		return errors.New("cách dùng: wj proxy project off [-all]")
 	}
 	index := loadProjectIndex(home)
 	var roots []string
@@ -293,7 +293,7 @@ func removeProjectProxy(root string) (bool, error) {
 func projectList(out io.Writer, home string) error {
 	index := loadProjectIndex(home)
 	if len(index) == 0 {
-		fmt.Fprintln(out, "Chưa bật đo cho project nào. cd vào project rồi: setup-gateway proxy project on")
+		fmt.Fprintln(out, "Chưa bật đo cho project nào. cd vào project rồi: wj proxy project on")
 		return nil
 	}
 	var roots []string
@@ -312,7 +312,7 @@ func projectList(out io.Writer, home string) error {
 		fmt.Fprintf(out, "  %d. %-20s %s  (%s)\n", i+1, index[root], root, state)
 	}
 	if !portOpen(defaultProxyPort) {
-		fmt.Fprintf(out, "Proxy chưa chạy ở cổng %d -> setup-gateway proxy start\n", defaultProxyPort)
+		fmt.Fprintf(out, "Proxy chưa chạy ở cổng %d -> wj proxy start\n", defaultProxyPort)
 	}
 	return nil
 }

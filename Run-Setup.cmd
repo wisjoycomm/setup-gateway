@@ -1,4 +1,4 @@
 @echo off
-"%~dp0setup-gateway.exe" %*
+"%~dp0wj.exe" %*
 echo.
 pause
