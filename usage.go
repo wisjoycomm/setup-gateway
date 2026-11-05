@@ -259,6 +259,11 @@ func projectNameOf(cwd string) string {
 		return "(không rõ)"
 	}
 	dir := filepath.Clean(cwd)
+	// A path from another OS is not a place on this machine: walking it would end
+	// in this process's own folder.
+	if !filepath.IsAbs(dir) {
+		return lastPathPart(cwd)
+	}
 	for {
 		data, err := os.ReadFile(filepath.Join(dir, ".git"))
 		if err == nil {
@@ -276,6 +281,14 @@ func projectNameOf(cwd string) string {
 		}
 		dir = parent
 	}
+}
+
+func lastPathPart(path string) string {
+	parts := strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
 }
 
 // worktreeMain reads a worktree's ".git" file: "gitdir: <repo>/.git/worktrees/<name>".

@@ -140,6 +140,12 @@ func TestProjectNameJoinsWorktreesToMainRepo(t *testing.T) {
 	if got := projectNameOf(filepath.Join(root, "gone", "app")); got != "app" {
 		t.Errorf("deleted = %q", got)
 	}
+	// Tests run inside this repo, so a walk from a relative path would find its .git.
+	for _, foreign := range []string{`C:\w\app`, `\\?\C:\w\app`, "w/app", "app"} {
+		if got := projectNameOf(foreign); got != "app" {
+			t.Errorf("%q = %q", foreign, got)
+		}
+	}
 	if got := projectNameOf(""); got != "(không rõ)" {
 		t.Errorf("empty = %q", got)
 	}
