@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -139,9 +140,9 @@ func TestMenuReturnsAfterReadOnlyOperationsWithoutNetwork(t *testing.T) {
 	http.DefaultTransport = r
 	t.Cleanup(func() { http.DefaultTransport = previous })
 	var out bytes.Buffer
-	// Status, configuration guidance, cancelled toolkit install, help, invalid choice, exit.
+	// App status, configuration guidance, cancelled toolkit menu, help, invalid choice, exit.
 	// Never choose menu items that install software: tests must not change the machine.
-	err := mainMenu(strings.NewReader("8\n6\ncursor\n3\nn\nh\ninvalid\n0\n"), &out)
+	err := mainMenu(strings.NewReader("4\n1\n\n3\n1\ncursor\n4\n0\nh\ninvalid\n0\n"), &out)
 	if err != nil || r.calls != 0 {
 		t.Fatal(err, r.calls)
 	}
@@ -150,6 +151,50 @@ func TestMenuReturnsAfterReadOnlyOperationsWithoutNetwork(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Models") {
 		t.Fatal("configuration was not reached")
+	}
+}
+
+func TestSubMenuRunsChoiceAndGoesBack(t *testing.T) {
+	ran := 0
+	items := []menuItem{{"a", func() error { ran++; return nil }}, {"b", func() error { ran += 10; return nil }}}
+	for answer, want := range map[string]int{"2\n": 10, "0\n": 0, "\n": 0, "9\n": 0, "x\n": 0} {
+		ran = 0
+		var out bytes.Buffer
+		if err := subMenu("t", items, strings.NewReader(answer), &out); err != nil {
+			t.Fatal(err)
+		}
+		if ran != want {
+			t.Errorf("%q ran %d", answer, ran)
+		}
+	}
+}
+
+func TestMenuReachesTokenTable(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	var out bytes.Buffer
+	if err := mainMenu(strings.NewReader("3\n8\n0\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Token đã dùng") {
+		t.Errorf("out:\n%s", out.String())
+	}
+}
+
+func TestMenuNumbersRunInOrder(t *testing.T) {
+	want := 1
+	for _, line := range strings.Split(mainMenuText, "\n") {
+		number, rest, found := strings.Cut(strings.TrimSpace(line), ". ")
+		if !found || rest == "" || strings.Trim(number, "0123456789") != "" {
+			continue
+		}
+		if number != strconv.Itoa(want) {
+			t.Errorf("got item %s, want %d: %s", number, want, line)
+		}
+		want++
+	}
+	if menuPrompt != "Chọn [0-"+strconv.Itoa(want-1)+", h]" {
+		t.Errorf("prompt %q does not match %d items", menuPrompt, want-1)
 	}
 }
 

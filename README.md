@@ -29,10 +29,7 @@ For an offline transfer of the CLI itself:
 Download and extract `wj-windows-amd64.zip` from GitHub Releases, then
 double-click **Run-Setup.cmd**. The menu offers:
 
-- **Install**: 1 new-machine wizard, 2 missing apps (Claude, Codex, Orca, mitmproxy...), 3 command-line toolkit, 4 window manager, 14 project setup.
-- **Connect**: 5 Claude Code (gateway / OAuth token / API key / browser login), 6 Codex, OpenCode, Cursor, Antigravity, Orca, 7 switch saved Claude profile.
-- **Check**: 8 installed apps, 15 live tokens for every project, 16 token overlay, 9 token usage through mitmproxy, 13 config drift between agents, 17 refresh gateway models.
-- **Update / remove**: 10 apps, 11 wj itself, 12 uninstall toolkit or window manager.
+- 1 new-machine wizard, 2 project setup, 3 AI agents (connect, profiles, gateway models, config check, token views), 4 applications (install, update, toolkit, window manager), 5 update wj.
 - `h` quick help, `0` exit.
 
 Run `wj help` for a plain-language overview, or `help claude`, `help codex`,
