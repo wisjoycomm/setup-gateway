@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+func prepareConsole() func() { return func() {} }
+
 func refreshProcessPath() {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -21,5 +23,3 @@ func refreshProcessPath() {
 	}
 	_ = os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
 }
-
-func setEnvWindows(name, value string) error { return nil }

@@ -29,6 +29,7 @@ var appCatalog = []appSpec{
 	{"antigravity", "Antigravity CLI", "agy", "https://antigravity.google/cli/install.ps1", "https://antigravity.google/cli/install.sh", "", ""},
 	{"antigravity-ide", "Antigravity IDE", "antigravity-ide", "", "", "Google.AntigravityIDE", "antigravity-ide"},
 	{"orca", "Orca", "orca", "", "", "", ""},
+	{"mitmproxy", "mitmproxy", "mitmdump", "", "", "mitmproxy.mitmproxy", ""},
 }
 
 func appByID(id string) (appSpec, error) {
@@ -40,7 +41,7 @@ func appByID(id string) (appSpec, error) {
 			return app, nil
 		}
 	}
-	return appSpec{}, fmt.Errorf("unknown app %q; run apps list", id)
+	return appSpec{}, fmt.Errorf("không có app %q; xem tên app: setup-gateway apps list", id)
 }
 
 func appCandidates(app appSpec, home, platform string) []string {
@@ -72,6 +73,13 @@ func appCandidates(app appSpec, home, platform string) []string {
 			"orca":            {"Programs/orca/Orca.exe"},
 		}[app.ID] {
 			paths = append(paths, filepath.Join(local, filepath.FromSlash(suffix)))
+		}
+		if app.ID == "mitmproxy" {
+			programs := os.Getenv("ProgramFiles")
+			if programs == "" {
+				programs = `C:\Program Files`
+			}
+			paths = append(paths, filepath.Join(programs, "mitmproxy", "bin", "mitmdump.exe"))
 		}
 		paths = append(paths, filepath.Join(local, "Microsoft", "WinGet", "Links", name+".exe"), filepath.Join(home, "AppData", "Roaming", "npm", name+".cmd"))
 	}
@@ -131,6 +139,18 @@ func planApp(app appSpec, platform, arch string, update bool) (installPlan, erro
 		}
 		return installPlan{Repo: "stablyai/orca", Asset: asset}, nil
 	}
+	if app.ID == "mitmproxy" && platform != "windows" {
+		action := "install"
+		if update {
+			action = "upgrade"
+		}
+		if platform == "darwin" {
+			return installPlan{Command: []string{"brew", action, "mitmproxy"}}, nil
+		}
+		if platform == "linux" {
+			return installPlan{Command: []string{"uv", "tool", action, "mitmproxy"}}, nil
+		}
+	}
 	if platform == "windows" {
 		if app.WindowsScript != "" {
 			return installPlan{URL: app.WindowsScript}, nil
@@ -155,7 +175,7 @@ func planApp(app appSpec, platform, arch string, update bool) (installPlan, erro
 			return installPlan{Command: []string{"brew", action, "--cask", app.Cask}}, nil
 		}
 	}
-	return installPlan{}, fmt.Errorf("%s has no automated installer on %s; use its vendor download page (see the guide)", app.Name, platform)
+	return installPlan{}, fmt.Errorf("%s chưa cài tự động được trên %s; tải từ trang của hãng (xem HUONG-DAN.md)", app.Name, platform)
 }
 
 type appManager struct {
@@ -172,20 +192,20 @@ func newAppManager() appManager {
 func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 	if len(args) == 0 || args[0] == "list" || args[0] == "status" {
 		if len(args) > 1 {
-			return errors.New("apps list/status accepts no additional arguments")
+			return errors.New("apps list không nhận thêm tham số")
 		}
-		fmt.Fprintln(out, "Applications (local check; no downloads):")
+		fmt.Fprintln(out, "Ứng dụng trên máy (chỉ kiểm tra tại máy, không tải gì):")
 		for _, app := range appCatalog {
-			state := "missing"
+			state := "chưa cài"
 			if p := m.find(app, m.home); p != "" {
-				state = "installed: " + p
+				state = "đã cài: " + p
 			}
 			fmt.Fprintf(out, "  %-17s %-19s %s\n", app.ID, app.Name, state)
 		}
 		return nil
 	}
 	if len(args) < 2 || (args[0] != "install" && args[0] != "update") {
-		return errors.New("usage: apps list | apps install|update APP[,APP...] [-dry-run]; APP may be all")
+		return errors.New("cách dùng: apps list | apps install TÊN,TÊN | apps update TÊN,TÊN [-dry-run]; TÊN có thể là all. Xem: setup-gateway help apps")
 	}
 	flags := flag.NewFlagSet("apps", flag.ContinueOnError)
 	flags.SetOutput(out)
@@ -194,7 +214,7 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected apps arguments")
+		return errors.New("có tham số không hiểu; xem: setup-gateway help apps")
 	}
 	ids := splitList(args[1])
 	if args[1] == "all" {
@@ -204,7 +224,7 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 		}
 	}
 	if len(ids) == 0 {
-		return errors.New("select at least one app")
+		return errors.New("chưa chọn app nào")
 	}
 	var apps []appSpec
 	for _, id := range ids {
@@ -218,7 +238,7 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 	for _, app := range apps {
 		path := m.find(app, m.home)
 		if path != "" && args[0] == "install" {
-			fmt.Fprintf(out, "SKIP %s: already installed (%s)\n", app.Name, path)
+			fmt.Fprintf(out, "SKIP %s: đã có sẵn (%s) - muốn lên bản mới dùng apps update\n", app.Name, path)
 			continue
 		}
 		plan, err := planApp(app, runtime.GOOS, runtime.GOARCH, args[0] == "update" && path != "")
@@ -236,12 +256,12 @@ func (m appManager) run(args []string, input io.Reader, out io.Writer) error {
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(out, "FAILED %s: %v\n", app.Name, err)
+			fmt.Fprintf(out, "LỖI %s: %v\n", app.Name, err)
 			failures = append(failures, fmt.Errorf("%s: %w", app.ID, err))
 		}
 	}
 	if *dry {
-		fmt.Fprintln(out, "Dry run: no downloads, installs or updates.")
+		fmt.Fprintln(out, "Dry run: chỉ xem trước, không tải, không cài.")
 	}
 	return errors.Join(failures...)
 }
@@ -310,6 +330,6 @@ func executeAppInstall(app appSpec, plan installPlan, input io.Reader, out io.Wr
 	if err = runChild(command, input, out, cleanClaudeEnvironment(os.Environ())); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s installer completed. Open a new terminal if its command is not found.\n", app.Name)
+	fmt.Fprintf(out, "Đã cài xong %s. Nếu gõ lệnh chưa thấy, mở terminal mới.\n", app.Name)
 	return nil
 }

@@ -32,7 +32,7 @@ func applyCodex(home, auth, base, key, model, provider string, dry bool) (string
 	}
 	if len(b) > 0 {
 		if err = toml.Unmarshal(b, &doc); err != nil {
-			return "", fmt.Errorf("invalid Codex TOML; left untouched: %w", err)
+			return "", fmt.Errorf("file Codex config.toml bị lỗi cú pháp, tool không sửa nó: %w", err)
 		}
 	}
 	delete(doc, "model_provider")
@@ -80,7 +80,7 @@ func applyOpenCode(home, base, key string, ids []string, provider, npm string, d
 		}
 		clean, err := hujson.Standardize(b)
 		if err != nil {
-			return "", fmt.Errorf("invalid %s; left untouched: %w", file, err)
+			return "", fmt.Errorf("file %s bị lỗi cú pháp, tool không sửa nó: %w", file, err)
 		}
 		var layer map[string]any
 		if err = json.Unmarshal(clean, &layer); err != nil || layer == nil {
@@ -144,8 +144,8 @@ func mergeObject(dest, src map[string]any) {
 
 func configureClient(args []string, input io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		fmt.Fprintln(out, "Cau hinh: claude, codex, opencode, cursor, cursor-agent, antigravity, antigravity-ide, orca")
-		id := menuAnswer(input, out, "Ung dung (Enter = quay lai)")
+		fmt.Fprintln(out, "Kết nối app nào?\n  claude        Claude Code\n  codex         Codex CLI\n  opencode      OpenCode\n  cursor        Cursor editor (hướng dẫn)\n  cursor-agent  Cursor CLI (hướng dẫn)\n  antigravity   Antigravity CLI / agy (hướng dẫn)\n  orca          Orca (hướng dẫn)")
+		id := menuAnswer(input, out, "Gõ tên app (Enter = quay lại)")
 		if id == "" {
 			return nil
 		}
@@ -160,17 +160,17 @@ func configureClient(args []string, input io.Reader, out io.Writer) error {
 	}
 	if id != "codex" && id != "opencode" {
 		if len(args) > 1 {
-			return errors.New("this app uses its own sign-in UI; configure accepts only its app ID")
+			return errors.New("app này tự đăng nhập trong giao diện của nó; configure chỉ nhận tên app")
 		}
 		switch id {
 		case "cursor-agent":
-			fmt.Fprintln(out, "Run agent login for your Cursor account. Cursor's API key is not a Claude OAuth token. Custom gateway routing is not configured by this tool.")
+			fmt.Fprintln(out, "Cursor CLI: chạy  agent login  để đăng nhập tài khoản Cursor. Key Cursor khác token Claude. Tool không cấu hình gateway cho Cursor CLI.")
 		case "cursor":
-			fmt.Fprintln(out, "Open Cursor > Settings > Models: enter a provider API key and, where supported, Override OpenAI Base URL. Sign in from Cursor's account UI. Global OPENAI_* variables are not written.")
+			fmt.Fprintln(out, "Cursor: mở Cursor > Settings > Models, nhập API key và (nếu có) Override OpenAI Base URL. Đăng nhập trong Cursor. Tool không ghi biến OPENAI_* toàn máy.")
 		case "antigravity", "agy", "antigravity-ide":
-			fmt.Fprintln(out, "Start agy / Antigravity IDE and use the Google sign-in flow. This tool does not configure a custom endpoint for Antigravity.")
+			fmt.Fprintln(out, "Antigravity: mở agy hoặc Antigravity IDE rồi đăng nhập Google. Antigravity không hỗ trợ gateway riêng.")
 		case "orca":
-			fmt.Fprintln(out, "Open Orca, add your project folder, then select an installed coding agent. Configure Claude/Codex separately in this menu; Orca has no shared gateway token setting.")
+			fmt.Fprintln(out, "Orca: mở Orca, thêm thư mục project, chọn Claude hoặc Codex đã cài. Orca dùng kết nối của Claude/Codex, nên hãy kết nối chúng ở menu này trước.")
 		}
 		return nil
 	}
@@ -201,50 +201,50 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected configuration arguments")
+		return errors.New("có tham số không hiểu; xem: setup-gateway help codex")
 	}
 	if *auth == "" {
-		fmt.Fprintf(out, "%s: 1. Login  2. API key  3. Custom gateway\n", id)
-		*auth = map[string]string{"1": "login", "2": "api-key", "3": "gateway"}[menuAnswer(input, out, "Method [1-3]")]
+		fmt.Fprintf(out, "Kết nối %s - bạn đang có gì?\n  1. Tài khoản, đăng nhập trên trình duyệt  -> Đăng nhập\n  2. API key trực tiếp (OpenAI / Anthropic)  -> API key\n  3. Domain công ty (vd ai.adnx.vn) + key    -> Gateway\n", id)
+		*auth = map[string]string{"1": "login", "2": "api-key", "3": "gateway"}[menuAnswer(input, out, "Chọn [1-3]")]
 	}
 	if !contains([]string{"login", "api-key", "gateway"}, *auth) {
-		return errors.New("choose login, api-key or gateway; Claude session tokens do not authenticate this app")
+		return errors.New("hãy chọn 1, 2 hoặc 3 (login, api-key, gateway); token Claude không dùng cho app này")
 	}
 	if !validName(*provider) {
-		return errors.New("invalid provider-id")
+		return errors.New("provider-id chỉ gồm chữ, số, _ hoặc -")
 	}
 	if *device && (id != "codex" || *auth != "login") {
-		return errors.New("device-auth requires Codex login")
+		return errors.New("-device-auth chỉ dùng với Codex -auth login")
 	}
 	if *noLogin && *auth != "login" {
-		return errors.New("no-login applies only to normal login")
+		return errors.New("-no-login chỉ dùng với -auth login")
 	}
 	if *auth == "login" && (*base != "" || *keyStdin || *models != "") {
-		return errors.New("normal login does not accept a gateway, credential or model override")
+		return errors.New("-auth login không nhận -base-url, key hay -models")
 	}
 	if *auth == "api-key" && *base != "" {
-		return errors.New("use gateway mode for a custom domain")
+		return errors.New("có domain riêng thì chọn -auth gateway")
 	}
 	if id == "opencode" && *auth == "api-key" {
 		if *provider == "gateway" {
 			*provider = "openai"
 			if len(args) == 0 {
-				if answer := menuAnswer(input, out, "API provider [openai / anthropic; Enter = openai]"); answer != "" {
+				if answer := menuAnswer(input, out, "Key của hãng nào? openai hoặc anthropic (Enter = openai)"); answer != "" {
 					*provider = answer
 				}
 			}
 		}
 		if !contains([]string{"openai", "anthropic"}, *provider) {
-			return errors.New("direct OpenCode API requires provider-id openai or anthropic")
+			return errors.New("OpenCode API key cần -provider-id openai hoặc anthropic")
 		}
 	}
 	key := ""
 	if *auth != "login" {
 		if *auth == "gateway" && *base == "" {
 			if *keyStdin {
-				return errors.New("key-stdin requires base-url for gateway mode")
+				return errors.New("-key-stdin cần kèm -base-url khi dùng gateway")
 			}
-			*base = menuAnswer(input, out, "Gateway domain")
+			*base = menuAnswer(input, out, "Domain gateway (vd ai.adnx.vn)")
 		}
 		reader := bufio.NewReader(&oneByteReader{input})
 		if *keyStdin {
@@ -252,20 +252,20 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		} else {
 			key = strings.TrimSpace(os.Getenv("SETUP_GATEWAY_KEY"))
 			if key == "" {
-				key, err = promptSecret(input, reader, out, "API key / gateway token")
+				key, err = promptSecret(input, reader, out, "Dán key (gõ sẽ không hiện ra)")
 				if err != nil {
 					return err
 				}
 			}
 		}
 		if key == "" || strings.ContainsAny(key, " \r\n\t") {
-			return errors.New("a single API key is required")
+			return errors.New("cần đúng một key, không có khoảng trắng")
 		}
 		if strings.HasPrefix(key, "sk-ant-oat") || strings.HasPrefix(key, "sk-ant-sid") || strings.HasPrefix(key, "sessionKey=") {
-			return errors.New("Claude OAuth/session credentials cannot be used as this API key")
+			return errors.New("đây là token Claude (sk-ant-oat/sid), không dùng được cho app này")
 		}
 		if id == "codex" && *auth == "api-key" && strings.HasPrefix(key, "sk-ant-") {
-			return errors.New("Codex direct API mode needs an OpenAI API key, not an Anthropic key")
+			return errors.New("Codex API key cần key OpenAI, không phải key Anthropic (sk-ant-...)")
 		}
 	}
 	ids := splitList(*models)
@@ -284,20 +284,20 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 			}
 		}
 		if len(ids) == 0 && !*dry {
-			return errors.New("provide -models with the gateway's actual model IDs")
+			return errors.New("không lấy được model; nhập tên model của gateway bằng -models")
 		}
 		if *models == "" && len(ids) > 0 {
 			if len(args) == 0 {
-				fmt.Fprintln(out, "Available model IDs:", strings.Join(ids, ", "))
-				model := menuAnswer(input, out, "Default model ID")
+				fmt.Fprintln(out, "Model gateway có:", strings.Join(ids, ", "))
+				model := menuAnswer(input, out, "Gõ tên model muốn dùng mặc định")
 				if model == "" {
-					return errors.New("select a model ID")
+					return errors.New("chưa chọn model")
 				}
 				ids = append([]string{model}, ids...)
 			} else if id == "codex" {
 				model := pick(ids, []string{"gpt"}, nil)
 				if model == "" {
-					return errors.New("no GPT model found; pass -models with the gateway's Codex-compatible model ID")
+					return errors.New("gateway không có model GPT; nhập tên model dùng cho Codex bằng -models")
 				}
 				ids = append([]string{model}, ids...)
 			}
@@ -307,10 +307,10 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 	binary := findApp(app, home)
 	needsProcess := id == "codex" && (*auth == "api-key" || *auth == "login" && !*noLogin) || id == "opencode" && *auth == "login" && !*noLogin
 	if needsProcess && binary == "" && !*dry {
-		return fmt.Errorf("%s is missing; run setup-gateway apps install %s first", id, id)
+		return fmt.Errorf("máy chưa có %s; cài trước bằng: setup-gateway apps install %s", id, id)
 	}
 	if *dry {
-		fmt.Fprintf(out, "Dry run: configure %s with %s; no network, files, installation or login.\n", id, *auth)
+		fmt.Fprintf(out, "Dry run: sẽ kết nối %s bằng %s; chưa ghi file, chưa gọi mạng, chưa đăng nhập.\n", id, *auth)
 		return nil
 	}
 	if id == "codex" {
@@ -322,8 +322,10 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		if e != nil {
 			return e
 		}
-		fmt.Fprintln(out, "Configured:", path)
-		fmt.Fprintln(out, "Custom gateways must support POST /v1/responses. Existing shell OPENAI_BASE_URL overrides may need removal.")
+		fmt.Fprintln(out, "Đã ghi cấu hình:", path)
+		if *auth == "gateway" {
+			fmt.Fprintln(out, "Lưu ý: gateway phải hỗ trợ POST /v1/responses. Nếu terminal còn biến OPENAI_BASE_URL cũ, hãy xoá nó.")
+		}
 		if needsProcess {
 			cmd := []string{binary, "login"}
 			stdin := input
@@ -336,7 +338,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 			return runChild(cmd, stdin, out, cleanCodexEnvironment(os.Environ()))
 		}
 	} else if *auth == "login" {
-		fmt.Fprintln(out, "OpenCode: use auth login to choose an account/provider, then /models to select its model. Existing custom providers remain available.")
+		fmt.Fprintln(out, "OpenCode: đăng nhập rồi gõ /models trong OpenCode để chọn model. Gateway đã cấu hình trước đó vẫn còn.")
 		if needsProcess {
 			return runChild([]string{binary, "auth", "login"}, input, out, os.Environ())
 		}
@@ -361,7 +363,7 @@ func configureAPIClient(id string, args []string, input io.Reader, out io.Writer
 		if e != nil {
 			return e
 		}
-		fmt.Fprintln(out, "Configured:", path)
+		fmt.Fprintln(out, "Đã ghi cấu hình:", path)
 	}
 	return nil
 }

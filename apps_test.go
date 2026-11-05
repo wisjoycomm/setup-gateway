@@ -139,12 +139,13 @@ func TestMenuReturnsAfterReadOnlyOperationsWithoutNetwork(t *testing.T) {
 	http.DefaultTransport = r
 	t.Cleanup(func() { http.DefaultTransport = previous })
 	var out bytes.Buffer
-	// Status, configuration guidance, cancelled toolkit install, invalid choice, exit.
-	err := mainMenu(strings.NewReader("8\n2\ncursor\n3\nn\ninvalid\n0\n"), &out)
+	// Status, configuration guidance, cancelled toolkit install, help, invalid choice, exit.
+	// Never choose menu items that install software: tests must not change the machine.
+	err := mainMenu(strings.NewReader("8\n6\ncursor\n3\nn\nh\ninvalid\n0\n"), &out)
 	if err != nil || r.calls != 0 {
 		t.Fatal(err, r.calls)
 	}
-	if strings.Count(out.String(), "Chon [0-11]") != 5 {
+	if strings.Count(out.String(), menuPrompt) != 6 {
 		t.Fatal("menu failed to return", out.String())
 	}
 	if !strings.Contains(out.String(), "Models") {

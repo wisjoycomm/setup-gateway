@@ -34,15 +34,15 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 		return runCLI(args[1:], input, out)
 	case "tools":
 		return runToolkit(args[1:], input, out)
+	case "proxy":
+		return runProxy(args[1:], input, out)
 	case "onboard":
 		if len(args) != 1 {
-			return errors.New("onboard is interactive and accepts no options; use tools or auth for scripted setup")
+			return errors.New("onboard chỉ chạy dạng hỏi-đáp, không nhận tham số; dùng tools hoặc auth nếu muốn chạy bằng lệnh")
 		}
 		return onboard(input, out)
-	case "help", "-h", "--help", "-help":
-		fmt.Fprintln(out, "App management:\n  setup-gateway apps list                    local installation status\n  setup-gateway apps install claude,codex,orca\n  setup-gateway apps install all -dry-run\n  setup-gateway apps update codex,orca        explicit app updates\n  setup-gateway configure codex              client-specific login/gateway\n  setup-gateway configure opencode\n  setup-gateway update                       update this CLI\n  setup-gateway version                      local version")
-		fmt.Fprintln(out, "Wisjoy setup-gateway: one CLI for a new development machine\n\n  setup-gateway                         interactive menu\n  setup-gateway onboard                 new-machine wizard\n  setup-gateway auth                    choose a Claude authentication method\n  setup-gateway tools list              show bundled tool groups\n  setup-gateway tools install cli       terminal, utilities, runtimes, coding agents\n  setup-gateway tools install wm        Komorebi / AeroSpace / i3 / Hyprland\n  setup-gateway tools uninstall cli     remove shell integration and selected apps\n  setup-gateway tools uninstall wm      remove window-manager setup\n  setup-gateway tools install cli -groups 1,2,4 -dry-run\n  setup-gateway -use-profile work -run  activate a Claude connection and launch\n\nAuthentication options (also accepted without the auth subcommand):")
-		return runCLI([]string{"-help"}, input, out)
+	case "help", "-h", "--help", "-help", "/?":
+		return printHelp(args[1:], input, out)
 	default:
 		return runCLI(args, input, out)
 	}
@@ -68,31 +68,56 @@ func menuAnswer(input io.Reader, out io.Writer, label string) string {
 	return strings.TrimSpace(string(line))
 }
 
+const mainMenuText = `
+Wisjoy setup-gateway %s
+
+ CÀI ĐẶT
+   1. Cài máy mới (hỏi từng bước, chọn cái mình cần)
+   2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
+   3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
+   4. Cài quản lý cửa sổ (không bắt buộc)
+ KẾT NỐI / ĐĂNG NHẬP
+   5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
+   6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
+   7. Đổi kết nối Claude đã lưu (profile)
+ KIỂM TRA
+   8. Xem ứng dụng đã cài
+   9. Đo token đã dùng (qua mitmproxy)
+ CẬP NHẬT / GỠ
+  10. Cập nhật ứng dụng
+  11. Cập nhật setup-gateway
+  12. Gỡ bộ công cụ / quản lý cửa sổ
+
+   h. Hướng dẫn nhanh      0. Thoát
+`
+
+const menuPrompt = "Chọn [0-12, h]"
+
 func mainMenu(input io.Reader, out io.Writer) error {
 	for {
-		fmt.Fprintf(out, "\nWisjoy setup-gateway %s - Chay tai may\n  1. Cai dat may moi (chon ung dung + cong cu)\n  2. Cau hinh / dang nhap tung ung dung\n  3. Cai bo cong cu dong lenh\n  4. Cai quan ly cua so\n  5. Go bo cong cu dong lenh\n  6. Go quan ly cua so\n  7. Xem / chon profile Claude\n  8. Trang thai ung dung (offline)\n  9. Cai ung dung con thieu\n  10. Cap nhat ung dung\n  11. Cap nhat setup-gateway\n  0. Thoat\n", strings.TrimSpace(buildVersion))
+		fmt.Fprintf(out, mainMenuText, strings.TrimSpace(buildVersion))
 		var err error
-		switch menuAnswer(input, out, "Chon [0-11]") {
-		case "", "0":
+		switch strings.ToLower(menuAnswer(input, out, menuPrompt)) {
+		case "", "0", "q":
 			return nil
 		case "1":
 			err = onboard(input, out)
 		case "2":
-			err = configureClient(nil, input, out)
+			err = appMenu("install", input, out)
 		case "3":
 			err = runToolkit([]string{"install", "cli"}, input, out)
 		case "4":
 			err = runToolkit([]string{"install", "wm"}, input, out)
 		case "5":
-			err = runToolkit([]string{"uninstall", "cli"}, input, out)
+			err = configureClient([]string{"claude"}, input, out)
 		case "6":
-			err = runToolkit([]string{"uninstall", "wm"}, input, out)
+			err = configureClient(nil, input, out)
 		case "7":
 			err = runCLI([]string{"-list-profiles"}, input, out)
 			if err != nil {
 				break
 			}
-			name := menuAnswer(input, out, "Profile de kich hoat (Enter = bo qua)")
+			name := menuAnswer(input, out, "Tên profile muốn dùng (Enter = quay lại)")
 			if name == "" {
 				break
 			}
@@ -100,20 +125,34 @@ func mainMenu(input io.Reader, out io.Writer) error {
 		case "8":
 			err = newAppManager().run(nil, input, out)
 		case "9":
-			err = appMenu("install", input, out)
+			err = proxyMenu(input, out)
 		case "10":
 			err = appMenu("update", input, out)
 		case "11":
-			if strings.EqualFold(menuAnswer(input, out, "Tai ban moi setup-gateway? [y/N]"), "y") {
+			if yes(menuAnswer(input, out, "Tải bản setup-gateway mới nhất? [y/N]")) {
 				err = updateSelf(nil, out)
 			}
+		case "12":
+			switch menuAnswer(input, out, "Gỡ gì? 1 = bộ công cụ dòng lệnh, 2 = quản lý cửa sổ, Enter = quay lại") {
+			case "1":
+				err = runToolkit([]string{"uninstall", "cli"}, input, out)
+			case "2":
+				err = runToolkit([]string{"uninstall", "wm"}, input, out)
+			}
+		case "h", "?", "help":
+			err = printHelp(nil, input, out)
 		default:
-			fmt.Fprintln(out, "Chon mot muc tu 0 den 11.")
+			fmt.Fprintln(out, "Không có mục này. Gõ số từ 0 đến 12, hoặc h để xem hướng dẫn.")
 		}
 		if err != nil {
-			fmt.Fprintln(out, "Loi:", err)
+			fmt.Fprintln(out, "Lỗi:", err)
 		}
 	}
+}
+
+// yes accepts y/yes and the Vietnamese c/có.
+func yes(answer string) bool {
+	return contains([]string{"y", "yes", "c", "có", "co"}, strings.ToLower(strings.TrimSpace(answer)))
 }
 
 func appMenu(action string, input io.Reader, out io.Writer) error {
@@ -121,7 +160,7 @@ func appMenu(action string, input io.Reader, out io.Writer) error {
 	if err := m.run(nil, input, out); err != nil {
 		return err
 	}
-	ids := menuAnswer(input, out, "Ung dung (ID cach nhau boi dau phay; all = tat ca; Enter = quay lai)")
+	ids := menuAnswer(input, out, "Gõ tên ứng dụng ở cột đầu, cách nhau dấu phẩy (vd: claude,codex). all = tất cả, Enter = quay lại")
 	if ids == "" {
 		return nil
 	}
@@ -129,36 +168,41 @@ func appMenu(action string, input io.Reader, out io.Writer) error {
 }
 
 func onboard(input io.Reader, out io.Writer) error {
-	fmt.Fprintln(out, "New-machine setup: select only the components you want.")
-	if strings.EqualFold(menuAnswer(input, out, "Install command-line toolkit? [y/N]"), "y") {
+	fmt.Fprintln(out, "Cài máy mới: tool hỏi từng phần, phần nào không cần thì Enter để bỏ qua.")
+	fmt.Fprintln(out, "\nBước 1/4 - Bộ công cụ dòng lệnh (terminal đẹp, git, node, python, ripgrep...)")
+	if yes(menuAnswer(input, out, "Cài không? [y/N]")) {
 		if err := runToolkit([]string{"install", "cli"}, input, out); err != nil {
 			return err
 		}
 	}
+	fmt.Fprintln(out, "\nBước 2/4 - Ứng dụng lập trình")
 	if err := appMenu("install", input, out); err != nil {
-		fmt.Fprintln(out, "Some apps did not install:", err)
+		fmt.Fprintln(out, "Có ứng dụng cài chưa xong:", err)
 	}
-	if strings.EqualFold(menuAnswer(input, out, "Install/configure window manager? [y/N]"), "y") {
+	fmt.Fprintln(out, "\nBước 3/4 - Quản lý cửa sổ kiểu i3 (không bắt buộc, đổi phím tắt và cách xếp cửa sổ)")
+	if yes(menuAnswer(input, out, "Cài không? [y/N]")) {
 		if err := runToolkit([]string{"install", "wm"}, input, out); err != nil {
 			return err
 		}
 	}
+	fmt.Fprintln(out, "\nBước 4/4 - Kết nối / đăng nhập ứng dụng")
 	for {
-		if !strings.EqualFold(menuAnswer(input, out, "Configure/login an application? [y/N]"), "y") {
+		if !yes(menuAnswer(input, out, "Kết nối một ứng dụng? [y/N]")) {
+			fmt.Fprintln(out, "Xong. Mở terminal mới để nhận PATH mới. Gõ setup-gateway help khi cần.")
 			return nil
 		}
 		if err := configureClient(nil, input, out); err != nil {
-			fmt.Fprintln(out, "Configuration:", err)
+			fmt.Fprintln(out, "Lỗi kết nối:", err)
 		}
 	}
 }
 
 func toolkitScript(platform, action, module string) (string, error) {
 	if action != "install" && action != "uninstall" {
-		return "", errors.New("tool action must be install or uninstall")
+		return "", errors.New("chỉ có install hoặc uninstall")
 	}
 	if module != "cli" && module != "wm" {
-		return "", errors.New("tool module must be cli or wm")
+		return "", errors.New("chỉ có cli (công cụ dòng lệnh) hoặc wm (quản lý cửa sổ)")
 	}
 	switch platform {
 	case "windows":
@@ -180,7 +224,7 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		return nil
 	}
 	if len(args) < 2 {
-		return errors.New("usage: setup-gateway tools install|uninstall cli|wm [-groups 1,2,4] [-dry-run]")
+		return errors.New("cách dùng: setup-gateway tools install|uninstall cli|wm [-groups 1,2,4] [-dry-run]; xem: setup-gateway help tools")
 	}
 	action, module := args[0], args[1]
 	script, err := toolkitScript(runtime.GOOS, action, module)
@@ -198,15 +242,15 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected tools arguments")
+		return errors.New("có tham số không hiểu; xem: setup-gateway help tools")
 	}
 	selected := splitList(*groups)
 	if len(selected) > 0 && module != "cli" {
-		return errors.New("-groups applies only to the cli module")
+		return errors.New("-groups chỉ dùng với cli")
 	}
 	for _, group := range selected {
 		if !contains([]string{"1", "2", "3", "4"}, group) {
-			return errors.New("groups must be a comma-separated subset of 1,2,3,4")
+			return errors.New("-groups chỉ nhận các số 1,2,3,4 cách dấu phẩy")
 		}
 	}
 	fmt.Fprintf(out, "%s %s on %s using bundled %s\n", action, module, runtime.GOOS, script)
@@ -222,8 +266,8 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, "Dry run: no extraction, package installs, configuration changes or processes.")
 		return nil
 	}
-	if !strings.EqualFold(menuAnswer(input, out, "Continue? [y/N]"), "y") {
-		fmt.Fprintln(out, "Cancelled.")
+	if !yes(menuAnswer(input, out, "Tiếp tục? [y/N]")) {
+		fmt.Fprintln(out, "Đã huỷ.")
 		return nil
 	}
 	data, err := bundledToolkit.ReadFile(script)
@@ -262,6 +306,6 @@ func runToolkit(args []string, input io.Reader, out io.Writer) error {
 		return fmt.Errorf("%s %s did not complete; review package results above: %w", action, module, err)
 	}
 	refreshProcessPath()
-	fmt.Fprintln(out, "Toolkit action completed. Open a new terminal for PATH/profile changes.")
+	fmt.Fprintln(out, "Xong. Mở terminal mới để nhận PATH/profile mới.")
 	return nil
 }

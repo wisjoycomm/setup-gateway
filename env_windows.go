@@ -3,11 +3,28 @@
 package main
 
 import (
-	"golang.org/x/sys/windows/registry"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
+
+const cpUTF8 = 65001
+
+// prepareConsole switches the console to UTF-8 so Vietnamese text renders,
+// and returns a function restoring the previous code page for the parent shell.
+func prepareConsole() func() {
+	old, err := windows.GetConsoleOutputCP()
+	if err != nil || old == cpUTF8 {
+		return func() {}
+	}
+	if windows.SetConsoleOutputCP(cpUTF8) != nil {
+		return func() {}
+	}
+	return func() { _ = windows.SetConsoleOutputCP(old) }
+}
 
 // Refresh only this process so later wizard steps can see freshly installed apps.
 func refreshProcessPath() {
@@ -45,13 +62,4 @@ func refreshProcessPath() {
 		}
 	}
 	_ = os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
-}
-
-func setEnvWindows(name, value string) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-	return k.SetStringValue(name, value)
 }

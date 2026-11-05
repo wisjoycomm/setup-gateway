@@ -42,42 +42,42 @@ func canonicalAuth(auth string) string {
 func (p *connectionProfile) validate() error {
 	p.Auth = canonicalAuth(p.Auth)
 	if !contains([]string{"gateway", "oauth", "api-key", "login"}, p.Auth) {
-		return errors.New("auth must be gateway, oauth, api-key, or login")
+		return errors.New("-auth phải là gateway, oauth, api-key hoặc login")
 	}
 	if strings.ContainsAny(p.Credential, "\r\n\t ") {
-		return errors.New("credential must be a single token without whitespace")
+		return errors.New("key/token phải liền một dòng, không có khoảng trắng")
 	}
 	if strings.HasPrefix(p.Credential, "sk-ant-sid") || strings.HasPrefix(p.Credential, "sessionKey=") {
-		return errors.New("a claude.ai sessionKey cookie cannot authenticate Claude Code; use a sk-ant-oat OAuth token, API key, or browser login")
+		return errors.New("cookie sessionKey (sk-ant-sid...) của claude.ai không dùng được; hãy dùng token sk-ant-oat, API key hoặc đăng nhập web")
 	}
 	if p.Auth == "login" {
 		if p.Credential != "" || p.BaseURL != "" {
-			return errors.New("normal login does not accept a key or custom domain")
+			return errors.New("đăng nhập web không cần key hay domain")
 		}
 		p.Header = ""
 		p.Models = nil
 		return nil
 	}
 	if p.Credential == "" {
-		return errors.New("a credential is required")
+		return errors.New("chưa nhập key/token")
 	}
 	if p.Auth == "oauth" {
 		if !strings.HasPrefix(p.Credential, "sk-ant-oat") || len(p.Credential) <= len("sk-ant-oat") {
-			return errors.New("OAuth/session mode requires the complete sk-ant-oat... token")
+			return errors.New("token OAuth phải là chuỗi đầy đủ bắt đầu bằng sk-ant-oat...")
 		}
 		if p.BaseURL != "" {
-			return errors.New("OAuth mode connects directly to Claude; use a gateway-issued key for a custom domain")
+			return errors.New("token OAuth nối thẳng tới Claude, không đi qua domain; dùng domain thì chọn Gateway với key do gateway cấp")
 		}
 		p.Header = ""
 		p.Models = nil
 		return nil
 	}
 	if strings.HasPrefix(p.Credential, "sk-ant-oat") {
-		return errors.New("this is an OAuth token; choose -auth oauth instead of sending it as an API or gateway key")
+		return errors.New("đây là token OAuth (sk-ant-oat); hãy chọn mục Token OAuth (-auth oauth), không dán vào Gateway/API key")
 	}
 	if p.Auth == "api-key" {
 		if p.BaseURL != "" && p.BaseURL != "https://api.anthropic.com/v1" {
-			return errors.New("use -auth gateway for a custom domain; api-key mode uses the official Anthropic API")
+			return errors.New("có domain riêng thì chọn Gateway; API key luôn dùng máy chủ Anthropic chính thức")
 		}
 		p.BaseURL = "https://api.anthropic.com/v1"
 		p.Header = "x-api-key"
@@ -87,7 +87,7 @@ func (p *connectionProfile) validate() error {
 		p.Header = "bearer"
 	}
 	if p.Header != "bearer" && p.Header != "x-api-key" {
-		return errors.New("auth-header must be bearer or x-api-key")
+		return errors.New("-auth-header phải là bearer hoặc x-api-key")
 	}
 	base, err := gatewayURL(p.BaseURL)
 	if err != nil {
@@ -100,21 +100,21 @@ func (p *connectionProfile) validate() error {
 func gatewayURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", errors.New("a gateway domain is required")
+		return "", errors.New("chưa nhập domain gateway")
 	}
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" {
-		return "", errors.New("invalid gateway URL")
+		return "", errors.New("domain gateway không hợp lệ")
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", errors.New("gateway URL must not include credentials, query parameters or a fragment")
+		return "", errors.New("domain gateway không được chứa user:pass, ?tham số hay #")
 	}
 	loopback := strings.EqualFold(u.Hostname(), "localhost") || net.ParseIP(u.Hostname()).IsLoopback()
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return "", errors.New("gateway URL must use HTTPS (HTTP is allowed only on localhost)")
+		return "", errors.New("gateway phải dùng https:// (http:// chỉ cho localhost)")
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, part := range parts {
@@ -131,7 +131,7 @@ func gatewayURL(raw string) (string, error) {
 func discoverModels(p connectionProfile) ([]string, error) {
 	req, err := http.NewRequest(http.MethodGet, p.BaseURL+"/models", nil)
 	if err != nil {
-		return nil, errors.New("invalid models endpoint")
+		return nil, errors.New("địa chỉ /models không hợp lệ")
 	}
 	if p.Header == "x-api-key" {
 		req.Header.Set("x-api-key", p.Credential)
@@ -142,12 +142,12 @@ func discoverModels(p connectionProfile) ([]string, error) {
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, errors.New("cannot reach the models endpoint; check the domain, network and TLS certificate")
+		return nil, errors.New("không kết nối được gateway; kiểm tra domain, mạng, chứng chỉ TLS (hoặc proxy)")
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		// Some gateways echo credentials in errors. Report status, never the body.
-		return nil, fmt.Errorf("models check returned HTTP %d; check the credential/header, or use -skip-check -models ID1,ID2 if discovery is unsupported", res.StatusCode)
+		return nil, fmt.Errorf("gateway trả về HTTP %d khi kiểm tra key; 401/403 = sai key hoặc sai loại key (thử -auth-header x-api-key). Gateway không có /models thì dùng -skip-check -models ID1,ID2", res.StatusCode)
 	}
 	var payload struct {
 		Data []struct {
@@ -155,7 +155,7 @@ func discoverModels(p connectionProfile) ([]string, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&payload); err != nil {
-		return nil, errors.New("models endpoint did not return a supported JSON model list")
+		return nil, errors.New("gateway không trả về danh sách model đúng dạng")
 	}
 	var ids []string
 	for _, item := range payload.Data {
@@ -165,7 +165,7 @@ func discoverModels(p connectionProfile) ([]string, error) {
 	}
 	sort.Strings(ids)
 	if len(ids) == 0 {
-		return nil, errors.New("models endpoint returned no model IDs")
+		return nil, errors.New("gateway trả về danh sách model rỗng")
 	}
 	return ids, nil
 }
@@ -176,7 +176,7 @@ func validName(name string) bool { return namePattern.MatchString(name) }
 
 func profilePath(home, name string) (string, error) {
 	if !validName(name) {
-		return "", errors.New("invalid profile name; use letters, numbers, underscore or hyphen")
+		return "", errors.New("tên profile chỉ gồm chữ, số, _ hoặc - (vd adnx, work)")
 	}
 	return filepath.Join(home, ".setup-gateway", "profiles", name+".json"), nil
 }
@@ -201,10 +201,10 @@ func loadProfile(home, name string) (connectionProfile, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return p, fmt.Errorf("cannot read profile %q", name)
+		return p, fmt.Errorf("không có profile %q; xem danh sách: setup-gateway -list-profiles", name)
 	}
 	if err := json.Unmarshal(data, &p); err != nil {
-		return p, fmt.Errorf("profile %q is not valid JSON", name)
+		return p, fmt.Errorf("file profile %q bị hỏng", name)
 	}
 	err = p.validate()
 	return p, err
@@ -213,7 +213,7 @@ func loadProfile(home, name string) (connectionProfile, error) {
 func listProfiles(home string, out io.Writer) error {
 	entries, err := os.ReadDir(filepath.Join(home, ".setup-gateway", "profiles"))
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(out, "No saved profiles. Use -profile NAME when setting up Claude.")
+		fmt.Fprintln(out, "Chưa lưu profile nào. Khi kết nối Claude, đặt tên ở câu hỏi cuối (hoặc thêm -profile TÊN).")
 		return nil
 	}
 	if err != nil {
@@ -226,10 +226,10 @@ func listProfiles(home string, out io.Writer) error {
 		name := strings.TrimSuffix(entry.Name(), ".json")
 		p, err := loadProfile(home, name)
 		if err != nil {
-			fmt.Fprintf(out, "%s: invalid profile\n", name)
+			fmt.Fprintf(out, "  %s: profile bị lỗi\n", name)
 			continue
 		}
-		fmt.Fprintf(out, "%s: %s %s\n", name, p.Auth, p.BaseURL)
+		fmt.Fprintf(out, "  %s: %s %s\n", name, p.Auth, p.BaseURL)
 	}
 	return nil
 }

@@ -28,19 +28,29 @@ Neu chi co source Git, xem muc Build o cuoi file nay.
 Menu:
 
 ```text
-1. Cai dat may moi (chon ung dung + cong cu)
-2. Cau hinh / dang nhap tung ung dung
-3. Cai bo cong cu dong lenh
-4. Cai quan ly cua so
-5. Go bo cong cu dong lenh
-6. Go quan ly cua so
-7. Xem / chon profile Claude da luu
-8. Trang thai ung dung (offline)
-9. Cai ung dung con thieu
-10. Cap nhat ung dung
-11. Cap nhat setup-gateway
-0. Thoat
+ CÀI ĐẶT
+   1. Cài máy mới (hỏi từng bước, chọn cái mình cần)
+   2. Cài ứng dụng còn thiếu (Claude, Codex, Orca, mitmproxy...)
+   3. Cài bộ công cụ dòng lệnh (terminal, git, node, python...)
+   4. Cài quản lý cửa sổ (không bắt buộc)
+ KẾT NỐI / ĐĂNG NHẬP
+   5. Kết nối Claude Code (gateway, token OAuth, API key, đăng nhập web)
+   6. Kết nối Codex / OpenCode / Cursor / Antigravity / Orca
+   7. Đổi kết nối Claude đã lưu (profile)
+ KIỂM TRA
+   8. Xem ứng dụng đã cài
+   9. Đo token đã dùng (qua mitmproxy)
+ CẬP NHẬT / GỠ
+  10. Cập nhật ứng dụng
+  11. Cập nhật setup-gateway
+  12. Gỡ bộ công cụ / quản lý cửa sổ
+
+   h. Hướng dẫn nhanh      0. Thoát
 ```
+
+Quen lenh nao thi go `setup-gateway help` (hoac `help claude`, `help codex`,
+`help proxy`, `help apps`, `help tools`, `help words` de xem giai thich tu ngu).
+Tren Windows tool tu bat UTF-8 de hien dung tieng Viet co dau.
 
 Che do may moi hoi tung phan. Khong can cai het. Phan quan ly cua so la tuy chon.
 Khi cai package, Windows co the hien UAC; Homebrew/Linux co the hoi mat khau sudo.
@@ -55,7 +65,7 @@ kiem tra gateway van can mang. Tung app co the co auto-update rieng.
 
 ```text
 setup-gateway apps list
-setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca
+setup-gateway apps install claude,codex,opencode,cursor-agent,cursor,antigravity,antigravity-ide,orca,mitmproxy
 setup-gateway apps install all -dry-run
 setup-gateway apps update codex,orca
 setup-gateway update
@@ -77,6 +87,7 @@ tu ban nay tro di co lenh update tich hop.
 | antigravity (hoac agy) | CLI chinh thuc | CLI chinh thuc |
 | antigravity-ide | WinGet Google.AntigravityIDE | macOS: Homebrew; Linux: antigravity.google/download |
 | orca | Installer tu stablyai/orca | macOS: ~/Applications/Orca.app; Linux: ~/.local/bin/orca-ide |
+| mitmproxy | WinGet mitmproxy.mitmproxy | macOS: Homebrew; Linux: `uv tool install mitmproxy` |
 
 Windows can App Installer/WinGet cho cac goi WinGet. macOS can Homebrew cho
 ung dung cask. Wizard cho cai bo cong cu truoc de bo sung cac tien ich can thiet.
@@ -310,6 +321,55 @@ Nhap lai token OAuth khi duoc hoi. Tool tu don URL ADNX va model `cc/...` cu.
 
 Neu `/status` van hien endpoint cu, kiem tra settings cua project, bien moi truong
 va managed settings; chung khong nam trong file user ma tool vua cap nhat.
+
+## 6b. Do token da dung qua mitmproxy
+
+mitmproxy dung giua Claude/Codex va gateway (vd `ai.adnx.vn`), ghi lai moi luot
+goi model: thoi gian, app, model, so token vao/ra/cache. **Khong** ghi prompt,
+cau tra loi hay API key. Log nam tai `~/.setup-gateway/proxy/usage.jsonl`.
+
+**Cach 1 - mot lenh (de nhat).** Khong can cai tay gi:
+
+```powershell
+setup-gateway proxy run claude           # thieu mitmproxy thi hoi cai (Enter = co), tu bat proxy,
+setup-gateway proxy run codex            # mo app; thoat app la proxy tu tat
+setup-gateway proxy run -yes claude      # cho script: tu cai khong hoi
+```
+
+**Cach 2 - tung buoc** (proxy chay lau, nhieu app/cua so dung chung):
+
+```powershell
+setup-gateway proxy setup                # cai mitmproxy + tao chung chi, mot lan
+setup-gateway proxy start                # cua so 1: bat proxy, de mo
+setup-gateway proxy run claude           # cua so 2: tu dung proxy dang chay
+```
+
+Xem ket qua:
+
+```powershell
+setup-gateway proxy run codex exec "..." # tham so sau ten app duoc chuyen nguyen cho app
+setup-gateway proxy usage                # tong token 24 gio qua
+setup-gateway proxy usage -since 168h    # 7 ngay; -all = toan bo
+setup-gateway proxy status               # kiem tra mitmproxy, chung chi, cong, log
+```
+
+Ket qua mau:
+
+```text
+     APP                      MODEL  LUOT  LOI  VAO   RA  DOC CACHE  GHI CACHE    TONG
+  claude  claude-haiku-4-5-20251001     1    0   10  225          0     28,417  28,652
+```
+
+- Chi app mo bang `proxy run` moi di qua proxy. Tool chi dat `HTTPS_PROXY` va
+  chung chi CA (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`) cho **tien trinh do**;
+  khong sua settings Claude/Codex, khong sua bien moi truong cua may.
+- Lan dau `proxy start` mitmproxy tu tao CA trong `~/.mitmproxy`.
+- `proxy start -web` mo mitmweb (xem tung request tai http://127.0.0.1:8081).
+- Doi cong: `proxy start -port 9000` va `proxy run -port 9000 claude`.
+- Dung mitmproxy rieng cua ban (may khac/cong khac): bat no kem addon
+  `~/.setup-gateway/proxy/usage_meter.py` (tao ra sau lan `proxy start` dau tien),
+  roi chay `proxy run -proxy http://IP:PORT -ca duong/dan/mitmproxy-ca-cert.pem claude`.
+- So token lay tu truong `usage` gateway tra ve. Gia that do gateway quyet dinh.
 
 ## 7. Xem truoc va go cai dat
 
