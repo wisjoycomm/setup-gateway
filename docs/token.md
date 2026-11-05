@@ -26,6 +26,15 @@ wj usage -project game -app codex
 Cả máy: 24 giờ 7.7M · 7 ngày 173.6M · 30 ngày 812.1M · toàn bộ 986.3M
 ```
 
+## wj top
+
+Hiện đủ mọi project trong khoảng đang xem: app, lần dùng gần nhất, model, số lượt, token vào, ra,
+cache, tổng và số tiền quy đổi. Project dùng nhiều model có thêm một dòng cho mỗi model.
+
+Cửa sổ rộng từ 120 cột có đủ các cột trên một dòng. Cửa sổ hẹp hơn giữ các cột token, gộp app và
+thời gian vào cột đầu, model nằm ở dòng riêng, và bỏ cột lượt. Nếu cửa sổ không đủ dòng, cuối bảng
+báo còn thiếu bao nhiêu; `wj top -once` luôn in đủ, kể cả cột lượt.
+
 Overlay hiện tổng cả máy trong khoảng đang xem, thêm 7 ngày và 30 ngày.
 
 ## Overlay
@@ -63,7 +72,7 @@ trên tổng cả máy trong khoảng đang xem (`-since`). Mặc định không
 xem bằng `/usage`, còn gateway xem trên trang của gateway.
 
 Kéo để đổi chỗ, chuột phải để đóng. Vị trí được lưu cho lần mở sau. Hiện chỉ có trên
-Windows; macOS và Linux dùng `wj top` trong một cửa sổ terminal nhỏ.
+Windows; macOS và Linux dùng `wj top`.
 
 ## Đọc số thế nào
 
@@ -75,7 +84,7 @@ Windows; macOS và Linux dùng `wj top` trong một cửa sổ terminal nhỏ.
 
 ## Quy đổi tiền
 
-Chỉ có trong `wj usage` và overlay mở rộng, không có ở `wj top` hay overlay thu gọn.
+Có trong `wj usage`, `wj top` và overlay mở rộng, không có ở overlay thu gọn.
 
 Đây là phép quy đổi, không phải số tiền thật phải trả: gói Pro/Max là phí cố định, còn gateway
 có giá riêng. Dùng để so sánh project và model với nhau.

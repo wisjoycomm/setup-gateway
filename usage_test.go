@@ -159,12 +159,55 @@ func TestRenderTopMarksActiveProjectsFirst(t *testing.T) {
 			claudeLine("b", "/w/small-new", now.Add(-10*time.Second).Format(time.RFC3339), 900, 0, 0, 0))
 	s.scan(time.Time{})
 	list, total := s.projectStatus(time.Time{})
-	out := renderTop(list, total, "trong 24h", now, 0, 0)
+	out := renderTop(list, s.modelsByProject(time.Time{}), total, "trong 24h", now, 0, 0)
 	if strings.Index(out, "small-new") > strings.Index(out, "big-old") {
 		t.Errorf("order:\n%s", out)
 	}
 	if !strings.Contains(out, "● small-new") || strings.Contains(out, "● big-old") || !strings.Contains(out, "5.0M") {
 		t.Errorf("render:\n%s", out)
+	}
+}
+
+func TestRenderTopShowsEveryDetail(t *testing.T) {
+	now := time.Now()
+	row := func(project, model string, calls int) usageRow {
+		return usageRow{
+			usageTotal: usageTotal{Project: project, Model: model, Calls: calls, Input: 1_000_000, Output: 2_000_000, CacheRead: 3_000_000, CacheWrite: 1_000_000, Total: 7_000_000},
+			Apps:       []string{"claude"}, LastModel: model, Last: now.Add(-5 * time.Minute), Cost: 12.5,
+		}
+	}
+	list := []usageRow{row("a-rather-long-project-name-here", "opus-x", 3), row("single", "sonnet-y", 2)}
+	models := map[string][]usageRow{
+		"a-rather-long-project-name-here": {row("a-rather-long-project-name-here", "opus-x", 2), row("a-rather-long-project-name-here", "haiku-z", 1)},
+		"single":                          {row("single", "sonnet-y", 2)},
+	}
+	total := row("", "", 5)
+
+	full := renderTop(list, models, total, "trong 24h", now, 0, 0)
+	for _, want := range []string{"≈USD", "LƯỢT", "a-rather-long-project-name-here", "2 model", "opus-x", "haiku-z", "sonnet-y", "$12.50", "1.0M", "2.0M", "4.0M", "7.0M"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("full view misses %q:\n%s", want, full)
+		}
+	}
+
+	for _, width := range []int{80, 100, 120, 160} {
+		out := renderTop(list, models, total, "trong 24h", now, width, 0)
+		for _, want := range []string{"≈USD", "$12.50", "opus-x", "haiku-z", "sonnet-y", "7.0M", "single"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("width %d misses %q:\n%s", width, want, out)
+			}
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if len([]rune(line)) >= width {
+				t.Errorf("width %d: line too long (%d): %q", width, len([]rune(line)), line)
+			}
+		}
+	}
+
+	// A short window says what it could not fit and still fits the screen.
+	short := renderTop(list, models, total, "trong 24h", now, 80, topFrameLines+1)
+	if !strings.Contains(short, "còn 1 project") || strings.Contains(short, "single") {
+		t.Errorf("short view:\n%s", short)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -650,12 +651,18 @@ func (s *sessionScanner) modelsByProject(since time.Time) map[string][]usageRow 
 // Every project keeps its line; the model lines stop at overlayMaxLines so the window
 // still fits a screen, and such a project just says how many models it used.
 func overlayDetailEntries(rows []usageRow, models map[string][]usageRow) []overlayDetailEntry {
-	spare := overlayMaxLines - len(rows)
+	return detailEntries(rows, models, overlayMaxLines, 2)
+}
+
+// detailEntries lists each project followed by its model lines when it used at least
+// minModels models and the lines still fit in maxLines.
+func detailEntries(rows []usageRow, models map[string][]usageRow, maxLines, minModels int) []overlayDetailEntry {
+	spare := maxLines - len(rows)
 	entries := make([]overlayDetailEntry, 0, len(rows))
 	for _, row := range rows {
 		used := models[row.Project]
 		entries = append(entries, overlayDetailEntry{usageRow: row, Models: len(used)})
-		if len(used) < 2 || len(used) > spare {
+		if len(used) < minModels || len(used) > spare {
 			continue
 		}
 		spare -= len(used)
@@ -676,42 +683,112 @@ func shortWindow(d time.Duration) string {
 	return d.String()
 }
 
-func renderTop(list []usageRow, total usageRow, label string, now time.Time, width, height int) string {
+const (
+	// topFullWidth is the narrowest terminal that fits every wj top column on one line.
+	topFullWidth = 120
+	// topWideFixed is what a full line uses besides the project and model columns.
+	topWideFixed = 83
+	// topNarrowFixed is what a narrow line uses besides its text column.
+	topNarrowFixed = 44
+	// topFrameLines is every line of the live screen that is not a project or model row.
+	topFrameLines = 11
+)
+
+// renderTop prints every project with all its numbers. width and height are the
+// terminal's, or 0 when nothing limits the output. A terminal under topFullWidth keeps
+// the token columns and moves the app, time and model into one text column.
+func renderTop(list []usageRow, models map[string][]usageRow, total usageRow, label string, now time.Time, width, height int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "wj top - token theo project, %s (%s)\n\n", label, now.Format("15:04:05"))
 	if total.Calls == 0 {
 		b.WriteString("Chưa có lượt gọi nào trong khoảng này.\n")
 		return b.String()
 	}
-	showModel := width == 0 || width >= 100
+	shown, limit := list, math.MaxInt
+	if height > 0 {
+		limit = max(height-topFrameLines, 1)
+		shown = shown[:min(len(shown), limit)]
+	}
+	narrow := width > 0 && width < topFullWidth
+	minModels := 2
+	if narrow {
+		minModels = 1 // there is no model column, so each model needs its own line
+	}
+	entries := detailEntries(shown, models, limit, minModels)
+
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	model := func(text string) string {
-		if showModel {
-			return text + "\t"
+	if narrow {
+		renderTopNarrow(w, entries, total, now, max(width-topNarrowFixed, 10))
+	} else {
+		projectLimit, modelLimit := 0, 0 // no limit
+		if width > 0 {
+			projectLimit = (width - topWideFixed) / 2
+			modelLimit = width - topWideFixed - projectLimit
 		}
-		return ""
+		renderTopWide(w, entries, total, now, projectLimit, modelLimit)
 	}
-	fmt.Fprintf(w, "  PROJECT\tAPP\t%sLẦN CUỐI\t%6s\t%7s\t%7s\t%7s\t%7s\n", model("MODEL"), "LƯỢT", "VÀO", "RA", "CACHE", "TỔNG")
-	shown := list
-	if height > 8 && len(shown) > height-8 {
-		shown = shown[:height-8]
-	}
-	for _, t := range shown {
-		mark := " "
-		if now.Sub(t.Last) < activeWindow {
-			mark = "●"
-		}
-		fmt.Fprintf(w, "%s %s\t%s\t%s%s\t%6d\t%7s\t%7s\t%7s\t%7s\n", mark, cutRunes(t.Project, 24), strings.Join(t.Apps, ","),
-			model(cutRunes(t.LastModel, 26)), agoText(now.Sub(t.Last)), t.Calls, compactTokens(t.Input), compactTokens(t.Output),
-			compactTokens(t.CacheRead+t.CacheWrite), compactTokens(t.Total))
-	}
-	fmt.Fprintf(w, "  TỔNG\t\t%s\t%6d\t%7s\t%7s\t%7s\t%7s\n", model(""), total.Calls, compactTokens(total.Input), compactTokens(total.Output),
-		compactTokens(total.CacheRead+total.CacheWrite), compactTokens(total.Total))
 	_ = w.Flush()
-	if len(shown) < len(list) {
-		fmt.Fprintf(&b, "  ...và %d project khác\n", len(list)-len(shown))
+
+	missing := 0
+	for _, row := range shown {
+		if used := len(models[row.Project]); used >= minModels {
+			missing += used
+		}
 	}
+	for _, entry := range entries {
+		if entry.Sub {
+			missing--
+		}
+	}
+	if hidden := len(list) - len(shown); hidden > 0 || missing > 0 {
+		fmt.Fprintf(&b, "  Thiếu chỗ: còn %d project, %d dòng model. Xem đủ: wj top -once\n", hidden, missing)
+	}
+	fmt.Fprintf(&b, "  ≈USD: nếu trả theo giá API ngày %s, không phải số tiền thật.\n", pricesAsOf)
 	return b.String()
+}
+
+func topMark(row overlayDetailEntry, now time.Time) string {
+	if !row.Sub && now.Sub(row.Last) < activeWindow {
+		return "●"
+	}
+	return " "
+}
+
+func renderTopWide(w io.Writer, entries []overlayDetailEntry, total usageRow, now time.Time, projectLimit, modelLimit int) {
+	numbers := func(row usageRow) string {
+		return fmt.Sprintf("%6d\t%7s\t%7s\t%7s\t%7s\t%8s", row.Calls, compactTokens(row.Input), compactTokens(row.Output),
+			compactTokens(row.CacheRead+row.CacheWrite), compactTokens(row.Total), costText(row))
+	}
+	fmt.Fprintf(w, "  PROJECT\tAPP\tLẦN CUỐI\tMODEL\t%6s\t%7s\t%7s\t%7s\t%7s\t%8s\n", "LƯỢT", "VÀO", "RA", "CACHE", "TỔNG", "≈USD")
+	for _, row := range entries {
+		project, model := cutRunes(row.Project, projectLimit), row.LastModel
+		switch {
+		case row.Sub:
+			project, model = "", row.Model
+		case row.Models > 1:
+			model = fmt.Sprintf("%d model", row.Models)
+		}
+		fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\t%s\n", topMark(row, now), project, strings.Join(row.Apps, ","), agoText(now.Sub(row.Last)),
+			cutRunes(model, modelLimit), numbers(row.usageRow))
+	}
+	fmt.Fprintf(w, "  TỔNG\t\t\t\t%s\n", numbers(total))
+}
+
+func renderTopNarrow(w io.Writer, entries []overlayDetailEntry, total usageRow, now time.Time, textLimit int) {
+	numbers := func(row usageRow) string {
+		return fmt.Sprintf("%6s\t%6s\t%6s\t%6s\t%7s", compactTokens(row.Input), compactTokens(row.Output),
+			compactTokens(row.CacheRead+row.CacheWrite), compactTokens(row.Total), costText(row))
+	}
+	fmt.Fprintf(w, "  %s\t%6s\t%6s\t%6s\t%6s\t%7s\n", cutRunes("PROJECT · APP · LẦN CUỐI", textLimit), "VÀO", "RA", "CACHE", "TỔNG", "≈USD")
+	for _, row := range entries {
+		text := "  " + cutRunes(row.Model, textLimit-2)
+		if !row.Sub {
+			suffix := " · " + strings.Join(row.Apps, ",") + " · " + agoText(now.Sub(row.Last))
+			text = cutRunes(row.Project, max(textLimit-len([]rune(suffix)), 6)) + suffix
+		}
+		fmt.Fprintf(w, "%s %s\t%s\n", topMark(row, now), cutRunes(text, textLimit), numbers(row.usageRow))
+	}
+	fmt.Fprintf(w, "  TỔNG\t%s\n", numbers(total))
 }
 
 func runTop(args []string, out io.Writer) error {
@@ -738,8 +815,9 @@ func runTop(args []string, out io.Writer) error {
 	frame := func(width, height int) string {
 		now := time.Now()
 		scanner.scan(time.Time{})
-		list, total := scanner.projectStatus(now.Add(-*window))
-		return renderTop(list, total, label, now, width, height) + "\n" + scanner.machineTotals(now) + "\n"
+		since := now.Add(-*window)
+		list, total := scanner.projectStatus(since)
+		return renderTop(list, scanner.modelsByProject(since), total, label, now, width, height) + "\n" + scanner.machineTotals(now) + "\n"
 	}
 	stdout, isFile := out.(*os.File)
 	if *once || !isFile || !term.IsTerminal(int(stdout.Fd())) {
