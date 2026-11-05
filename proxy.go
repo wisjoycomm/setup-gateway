@@ -43,9 +43,16 @@ const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, k
     setup-gateway proxy start          bật proxy, để cửa sổ này chạy
     setup-gateway proxy run claude     ở cửa sổ khác; tự dùng proxy đang chạy
 
-  XEM ĐÃ DÙNG BAO NHIÊU
-    setup-gateway proxy usage          24 giờ qua
-    setup-gateway proxy usage -since 168h   7 ngày;  -all = toàn bộ
+  XEM ĐÃ DÙNG BAO NHIÊU (một log chung cho cả máy, mọi app: Claude, Codex, OpenCode...)
+    setup-gateway proxy usage                  cả máy, 24 giờ qua, theo app + model
+    setup-gateway proxy usage -by project      theo từng project
+    setup-gateway proxy usage -by project-app  theo project + app
+    setup-gateway proxy usage -project remora  chỉ một project
+    setup-gateway proxy usage -app codex       chỉ một app
+    -since 168h = 7 ngày;  -all = toàn bộ
+
+  PROJECT: proxy run tự lấy tên thư mục git đang đứng (vd remora).
+    Đặt tay: setup-gateway proxy run -project ten-du-an claude
 
   Lệnh khác:
     proxy status               kiểm tra mitmproxy, chứng chỉ, cổng, file log
@@ -177,6 +184,7 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 	ca := flags.String("ca", "", "chứng chỉ CA (.pem) của mitmproxy riêng; mặc định ~/.mitmproxy/mitmproxy-ca-cert.pem")
 	dry := flags.Bool("dry-run", false, "chỉ in cách chạy")
 	assumeYes := flags.Bool("yes", false, "tự cài mitmproxy nếu thiếu, không hỏi")
+	project := flags.String("project", "", "tên project để tách số liệu; mặc định = tên thư mục đang đứng")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -185,7 +193,7 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 	}
 	rest := flags.Args()
 	if len(rest) == 0 {
-		return errors.New("cách dùng: setup-gateway proxy run claude|codex|opencode|LỆNH [tham số của app]")
+		return errors.New("cách dùng: setup-gateway proxy run [-project TÊN] claude|codex|opencode|LỆNH [tham số của app]")
 	}
 	proxy := *custom
 	if proxy == "" {
@@ -195,6 +203,15 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return errors.New("-proxy phải có dạng http://HOST:PORT")
 	}
+	if *project == "" {
+		*project = currentProject()
+	}
+	// The project travels as the proxy URL user name, so every client that honours
+	// HTTPS_PROXY (Claude, Codex, OpenCode, ...) tags its own traffic.
+	routed := *u
+	routed.User = url.UserPassword(*project, "x")
+	tagged := routed.String()
+	fmt.Fprintf(out, "Project: %s\n", *project)
 	if *ca == "" {
 		*ca = mitmCAPath(home)
 	}
@@ -228,11 +245,36 @@ func proxyRun(args []string, input io.Reader, out io.Writer, home string) error 
 	if _, err := os.Stat(*ca); err != nil {
 		return fmt.Errorf("chưa có chứng chỉ %s; chạy: setup-gateway proxy setup", *ca)
 	}
-	err = runChild(append([]string{binary}, rest[1:]...), input, out, proxyEnv(os.Environ(), proxy, *ca))
+	err = runChild(append([]string{binary}, rest[1:]...), input, out, proxyEnv(os.Environ(), tagged, *ca))
 	if *custom == "" {
 		fmt.Fprintln(out, "Xem token đã dùng: setup-gateway proxy usage")
 	}
 	return err
+}
+
+// currentProject names the project after the git repository root (or the
+// current folder), so runs from sub-folders of one repo count together.
+func currentProject() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "khac"
+	}
+	for d := dir; ; {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			dir = d
+			break
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+	name := filepath.Base(dir)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return "khac"
+	}
+	return name
 }
 
 func mitmCommand(bin, home string, port int) []string {
@@ -378,6 +420,7 @@ func proxySetup(args []string, input io.Reader, out io.Writer, home string) erro
 
 type usageRecord struct {
 	TS         string `json:"ts"`
+	Project    string `json:"project"`
 	Client     string `json:"client"`
 	Model      string `json:"model"`
 	Status     int    `json:"status"`
@@ -388,12 +431,24 @@ type usageRecord struct {
 }
 
 type usageTotal struct {
-	Client, Model                               string
+	Project, Client, Model                      string
 	Calls, Failed                               int
 	Input, Output, CacheRead, CacheWrite, Total int64
 }
 
+// usageFilter selects records and how they are grouped. GroupBy lists the
+// dimensions shown as columns: any of "project", "client", "model".
+type usageFilter struct {
+	Since           time.Time
+	Project, Client string
+	GroupBy         []string
+}
+
 func summarizeUsage(r io.Reader, since time.Time) ([]usageTotal, usageTotal, error) {
+	return summarizeUsageBy(r, usageFilter{Since: since, GroupBy: []string{"client", "model"}})
+}
+
+func summarizeUsageBy(r io.Reader, f usageFilter) ([]usageTotal, usageTotal, error) {
 	groups := map[string]*usageTotal{}
 	var all usageTotal
 	scanner := bufio.NewScanner(r)
@@ -403,16 +458,33 @@ func summarizeUsage(r io.Reader, since time.Time) ([]usageTotal, usageTotal, err
 		if json.Unmarshal(scanner.Bytes(), &rec) != nil {
 			continue
 		}
-		if !since.IsZero() {
+		if rec.Project == "" {
+			rec.Project = "(không rõ)"
+		}
+		if !f.Since.IsZero() {
 			ts, err := time.Parse(time.RFC3339, rec.TS)
-			if err != nil || ts.Before(since) {
+			if err != nil || ts.Before(f.Since) {
 				continue
 			}
 		}
-		key := rec.Client + "\x00" + rec.Model
+		if f.Project != "" && !strings.EqualFold(rec.Project, f.Project) || f.Client != "" && !strings.EqualFold(rec.Client, f.Client) {
+			continue
+		}
+		var row usageTotal
+		for _, dim := range f.GroupBy {
+			switch dim {
+			case "project":
+				row.Project = rec.Project
+			case "client":
+				row.Client = rec.Client
+			case "model":
+				row.Model = rec.Model
+			}
+		}
+		key := row.Project + "\x00" + row.Client + "\x00" + row.Model
 		g := groups[key]
 		if g == nil {
-			g = &usageTotal{Client: rec.Client, Model: rec.Model}
+			g = &row
 			groups[key] = g
 		}
 		for _, t := range []*usageTotal{g, &all} {
@@ -435,7 +507,7 @@ func summarizeUsage(r io.Reader, since time.Time) ([]usageTotal, usageTotal, err
 		if list[i].Total != list[j].Total {
 			return list[i].Total > list[j].Total
 		}
-		return list[i].Client+list[i].Model < list[j].Client+list[j].Model
+		return list[i].Project+list[i].Client+list[i].Model < list[j].Project+list[j].Client+list[j].Model
 	})
 	return list, all, scanner.Err()
 }
@@ -454,6 +526,9 @@ func proxyUsage(args []string, out io.Writer, home string) error {
 	window := flags.Duration("since", 24*time.Hour, "khoảng thời gian, ví dụ 1h, 24h, 168h (7 ngày)")
 	all := flags.Bool("all", false, "toàn bộ log")
 	file := flags.String("log", "", "đọc file log khác")
+	by := flags.String("by", "app", "gom theo: app (app + model), project, project-app, model")
+	project := flags.String("project", "", "chỉ tính một project")
+	client := flags.String("app", "", "chỉ tính một app: claude, codex, opencode...")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -461,7 +536,16 @@ func proxyUsage(args []string, out io.Writer, home string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("cách dùng: setup-gateway proxy usage [-since 24h | -all]")
+		return errors.New("cách dùng: setup-gateway proxy usage [-since 24h | -all] [-by app|project|project-app|model] [-project TÊN] [-app TÊN]")
+	}
+	groupBy, ok := map[string][]string{
+		"app":         {"client", "model"},
+		"project":     {"project"},
+		"project-app": {"project", "client"},
+		"model":       {"model"},
+	}[*by]
+	if !ok {
+		return errors.New("-by chỉ nhận: app, project, project-app, model")
 	}
 	path := *file
 	if path == "" {
@@ -481,31 +565,57 @@ func proxyUsage(args []string, out io.Writer, home string) error {
 	if *all {
 		since, label = time.Time{}, "toàn bộ"
 	}
-	list, total, err := summarizeUsage(f, since)
+	list, total, err := summarizeUsageBy(f, usageFilter{Since: since, Project: *project, Client: *client, GroupBy: groupBy})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Token đã dùng (%s) - %s\n\n", label, path)
+	scope := "cả máy, mọi app"
+	if *project != "" || *client != "" {
+		scope = strings.TrimSpace(strings.Join([]string{prefixed("project ", *project), prefixed("app ", *client)}, " "))
+	}
+	fmt.Fprintf(out, "Token đã dùng (%s; %s) - %s\n\n", label, scope, path)
 	if total.Calls == 0 {
 		fmt.Fprintln(out, "Không có lượt gọi nào trong khoảng này.")
 		return nil
 	}
+	headers := map[string]string{"project": "PROJECT", "client": "APP", "model": "MODEL"}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(w, "APP\tMODEL\tLƯỢT\tLỖI\tVÀO\tRA\tĐỌC CACHE\tGHI CACHE\tTỔNG\t")
-	row := func(t usageTotal) {
-		fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t\n", t.Client, t.Model, t.Calls, t.Failed,
+	var head []string
+	for _, dim := range groupBy {
+		head = append(head, headers[dim])
+	}
+	fmt.Fprintln(w, strings.Join(head, "\t")+"\tLƯỢT\tLỖI\tVÀO\tRA\tĐỌC CACHE\tGHI CACHE\tTỔNG\t")
+	row := func(t usageTotal, first string) {
+		var cells []string
+		for i, dim := range groupBy {
+			value := map[string]string{"project": t.Project, "client": t.Client, "model": t.Model}[dim]
+			if first != "" {
+				value = ""
+				if i == 0 {
+					value = first
+				}
+			}
+			cells = append(cells, value)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t\n", strings.Join(cells, "\t"), t.Calls, t.Failed,
 			groupDigits(t.Input), groupDigits(t.Output), groupDigits(t.CacheRead), groupDigits(t.CacheWrite), groupDigits(t.Total))
 	}
 	for _, t := range list {
-		row(t)
+		row(t, "")
 	}
-	total.Client, total.Model = "TỔNG", ""
-	row(total)
+	row(total, "TỔNG")
 	if err := w.Flush(); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "\nVÀO = token prompt mới; ĐỌC CACHE thường rẻ hơn nhiều so với VÀO. Giá thật do gateway quyết định.")
 	return nil
+}
+
+func prefixed(prefix, value string) string {
+	if value == "" {
+		return ""
+	}
+	return prefix + value
 }
 
 func proxyStatus(out io.Writer, home string) error {

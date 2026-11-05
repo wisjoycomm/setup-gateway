@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -46,7 +47,7 @@ func isClaudeRoutingKey(key string) bool {
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_CUSTOM_HEADERS",
 		"ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
 		"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "CLAUDE_CODE_OAUTH_SCOPES",
-		"CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+		"CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
 		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE",
 	}, key)
 }
@@ -87,10 +88,13 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 			env["ANTHROPIC_AUTH_TOKEN"] = p.Credential
 		}
 		for _, family := range []string{"OPUS", "SONNET", "HAIKU", "FABLE"} {
-			if model := pick(p.Models, []string{strings.ToLower(family)}, []string{"review"}); model != "" {
+			if model := newestModel(p.Models, strings.ToLower(family)); model != "" {
 				env["ANTHROPIC_DEFAULT_"+family+"_MODEL"] = model
 			}
 		}
+		// Claude Code asks the gateway for its model list at every start, so
+		// /model always shows what the gateway currently serves.
+		env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
 		model := pick(p.Models, []string{"opus"}, []string{"review"})
 		if model == "" {
 			model = pick(p.Models, []string{"sonnet"}, []string{"review"})
@@ -118,6 +122,58 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s (%s; giữ nguyên hooks, plugin và cài đặt khác)", path, p.Auth), nil
+}
+
+// newestModel returns the latest gateway ID of a family: namespaced gateway IDs
+// (cc/claude-fable-5-1) win over bare aliases, then the highest version string.
+func newestModel(ids []string, family string) string {
+	best := ""
+	for _, id := range ids {
+		low := strings.ToLower(id)
+		if !strings.Contains(low, family) || strings.Contains(low, "review") {
+			continue
+		}
+		if best == "" || newerModel(id, best) {
+			best = id
+		}
+	}
+	return best
+}
+
+// modelVersion extracts the dotted/hyphenated numbers after the family name:
+// "cx/gpt-6.1-sol" -> [6 1], "cc/claude-fable-5-1" -> [5 1]. Dates such as
+// 20251001 are ignored so they do not outrank real version numbers.
+func modelVersion(id string) []int {
+	var nums []int
+	for _, part := range strings.FieldsFunc(id, func(r rune) bool { return r == '-' || r == '.' || r == '/' || r == '[' || r == ']' }) {
+		n, err := strconv.Atoi(part)
+		if err == nil && n < 1000 {
+			nums = append(nums, n)
+		}
+	}
+	return nums
+}
+
+// newerModel orders models: higher version first, then plain (no [1m] or
+// -high style suffix), then namespaced gateway IDs, then name.
+func newerModel(a, b string) bool {
+	va, vb := modelVersion(a), modelVersion(b)
+	for i := 0; i < len(va) && i < len(vb); i++ {
+		if va[i] != vb[i] {
+			return va[i] > vb[i]
+		}
+	}
+	if len(va) != len(vb) {
+		return len(va) > len(vb)
+	}
+	plain := func(s string) bool { return !strings.ContainsAny(s, "[]") }
+	if plain(a) != plain(b) {
+		return plain(a)
+	}
+	if strings.Contains(a, "/") != strings.Contains(b, "/") {
+		return strings.Contains(a, "/")
+	}
+	return len(a) < len(b) || len(a) == len(b) && a < b
 }
 
 func cleanClaudeEnvironment(values []string) []string {

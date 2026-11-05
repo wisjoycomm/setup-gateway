@@ -158,8 +158,14 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		if err != nil {
 			return err
 		}
-		if len(p.Models) == 0 {
+		if len(p.Models) == 0 || *use != "" && *models == "" {
+			// A saved profile follows the gateway: new models appear without re-entry.
 			p.Models = ids
+			if *use != "" {
+				if err := saveProfile(home, *use, p, false); err != nil {
+					return err
+				}
+			}
 		}
 		fmt.Fprintf(out, "Key hợp lệ, gateway có %d model.\n", len(ids))
 	}

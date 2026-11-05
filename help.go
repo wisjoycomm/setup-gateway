@@ -63,6 +63,11 @@ Tham số khác:
   -no-login             (đăng nhập web) chỉ dọn cấu hình, chưa mở trình duyệt
   -dry-run              xem trước, không ghi file, không gọi mạng
 
+Model qua gateway: tool lấy danh sách model của gateway, gán Opus/Sonnet/Haiku/Fable
+bản mới nhất, và bật CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY để /model trong
+Claude hiện đủ model gateway đang có. Mỗi lần -use-profile, danh sách model được
+lấy lại từ gateway và lưu vào profile.
+
 Sau khi đổi: mở phiên Claude MỚI và gõ /status để kiểm tra.
 Tool giữ nguyên hooks, plugin, statusLine; file cũ được sao lưu .bak-<thời gian>.
 
@@ -79,19 +84,25 @@ Codex có 3 cách:
                            (máy không mở được trình duyệt: thêm -device-auth)
   2. API key OpenAI        setup-gateway configure codex -auth api-key
   3. Gateway công ty       setup-gateway configure codex -auth gateway -base-url ai.adnx.vn
+     Dùng lại gateway đã lưu cho Claude (khỏi nhập key lần nữa):
+                           setup-gateway configure codex -from-profile adnx
 
-  Gateway cho Codex phải hỗ trợ /v1/responses. Tool tự lấy danh sách model và
-  hỏi bạn chọn model mặc định; hoặc ghi sẵn: -models cx/gpt-6.1-sol
+  Gateway cho Codex phải hỗ trợ /v1/responses. Tool lấy TẤT CẢ model của gateway
+  đưa vào /model của Codex (GPT mới nhất đứng đầu, làm mặc định). Chạy lại lệnh
+  bất cứ lúc nào để cập nhật khi gateway thêm model.
+  Chỉ muốn một model: -models cx/gpt-6.1-sol
   Gateway không có /v1/models: thêm -skip-check -models TÊN_MODEL
 
-  Cấu hình ghi vào ~/.codex/config.toml (giữ projects, MCP, hooks; có sao lưu).
+  Cấu hình ghi vào ~/.codex/config.toml và ~/.codex/setup-gateway-models.json
+  (giữ projects, MCP, hooks; có sao lưu).
   Token Claude (sk-ant-...) KHÔNG dùng cho Codex.
 
 OpenCode:
   -auth login                          đăng nhập trong OpenCode
   -auth api-key -provider-id openai    key OpenAI trực tiếp
   -auth api-key -provider-id anthropic key Anthropic trực tiếp
-  -auth gateway -base-url DOMAIN       gateway công ty
+  -auth gateway -base-url DOMAIN       gateway công ty (lấy đủ model của gateway)
+  -from-profile adnx                   dùng lại gateway đã lưu cho Claude
 
 Cursor, Antigravity, Orca tự đăng nhập trong app; configure chỉ in hướng dẫn.`
 
