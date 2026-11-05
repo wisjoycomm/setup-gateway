@@ -163,7 +163,8 @@ một project.
                           chuột phải để đóng
   wj overlay -warn 5M     dòng tổng hiện 16.5M/5M, chuyển vàng từ 80% ngưỡng, đỏ khi vượt
   wj overlay stop         đóng overlay (overlay hiện chỉ có trên Windows)
-  wj usage                bảng chi tiết theo project + app
+  wj usage                bảng chi tiết theo project + app, có cột quy đổi USD theo giá API
+  wj usage -by project-model   từng model trong mỗi project
   wj usage -by app        theo app + model; còn có -by project, -by model
   wj usage -project game -app codex
   -since 168h             khoảng thời gian (mặc định 24h); wj usage còn có -all

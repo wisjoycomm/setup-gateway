@@ -195,7 +195,7 @@ func TestRunningProjectsDropsIdleOnes(t *testing.T) {
 }
 
 func TestParseTokenCount(t *testing.T) {
-	for text, want := range map[string]int64{"5M": 5_000_000, "500k": 500_000, "1.5G": 1_500_000_000, "20000": 20000, " 2m ": 2_000_000} {
+	for text, want := range map[string]int64{"5M": 5_000_000, "500k": 500_000, "1.5B": 1_500_000_000, "1.5G": 1_500_000_000, "20000": 20000, " 2m ": 2_000_000} {
 		if got, err := parseTokenCount(text); err != nil || got != want {
 			t.Errorf("%q = %d, %v", text, got, err)
 		}
@@ -275,5 +275,111 @@ func TestTopOnceWithoutSessions(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Chưa có lượt gọi") {
 		t.Errorf("out = %s", out.String())
+	}
+}
+
+func TestCallCostUsesTheRightRates(t *testing.T) {
+	cases := []struct {
+		name string
+		call sessionCall
+		want float64
+	}{
+		{"every kind of token", sessionCall{Model: "claude-opus-5-5", Input: 1_000_000, Output: 1_000_000, CacheRead: 1_000_000, CacheWrite: 3_000_000, CacheWrite1h: 1_000_000},
+			4 + 20 + 0.20 + 2*5 + 8},
+		{"gateway prefix and date", sessionCall{Model: "CX/claude-sonnet-5-5-20261001", Output: 1_000_000}, 10},
+		{"short prompt", sessionCall{Model: "claude-haiku-5-5", Input: 100_000}, 0.01},
+		{"long prompt counts cache", sessionCall{Model: "claude-haiku-5-5", Input: 1_000, CacheRead: 100_000}, 0.0005 + 0.005},
+		{"openai cache write costs input", sessionCall{Model: "gpt-5.4", CacheWrite: 100_000}, 0.25},
+		{"openai long tier", sessionCall{Model: "gpt-5.5", Input: 300_000}, 3},
+		{"openai priced cache write", sessionCall{Model: "gpt-6.1-sol", CacheWrite: 100_000}, 0.25},
+		{"dots and provider prefix", sessionCall{Model: "anthropic/claude-opus-5.5", Input: 1_000_000}, 4},
+		{"official only model", sessionCall{Model: "claude-opus-4-20250514", Output: 1_000_000}, 75},
+	}
+	for _, c := range cases {
+		got, ok := callCost(c.call)
+		if !ok || got < c.want-1e-9 || got > c.want+1e-9 {
+			t.Errorf("%s: cost = %v, %v, want %v", c.name, got, ok, c.want)
+		}
+	}
+	if len(modelPrices) < 100 || pricesAsOf == "" {
+		t.Errorf("prices.json looks empty: %d models, as of %q", len(modelPrices), pricesAsOf)
+	}
+	for _, model := range []string{"sonnet", "<synthetic>", "", "claude-opus-9", "my-gateway-model"} {
+		if _, ok := callCost(sessionCall{Model: model, Input: 1}); ok {
+			t.Errorf("%q should have no price", model)
+		}
+	}
+}
+
+func TestCostText(t *testing.T) {
+	cases := []struct {
+		row  usageRow
+		want string
+	}{
+		{usageRow{}, "$0"},
+		{usageRow{Cost: 0.001}, "<$0.01"},
+		{usageRow{Cost: 12.345}, "$12.35"},
+		{usageRow{Cost: 1234.5}, "$1,235"},
+		{usageRow{Cost: 12, Unpriced: 5}, "$12.00+"},
+		{usageRow{Unpriced: 5}, "?"},
+	}
+	for _, c := range cases {
+		if got := costText(c.row); got != c.want {
+			t.Errorf("costText(%+v) = %q, want %q", c.row, got, c.want)
+		}
+	}
+}
+
+func TestSummarizeSplitsOneHourCacheAndModels(t *testing.T) {
+	s, home := testScanner(t)
+	line := func(id, model string, write, oneHour int) string {
+		return fmt.Sprintf(`{"type":"assistant","cwd":"/w/game","timestamp":"2026-01-01T00:00:00Z","message":{"id":%q,"model":%q,"usage":{"cache_creation_input_tokens":%d,"cache_creation":{"ephemeral_1h_input_tokens":%d}}}}`+"\n", id, model, write, oneHour)
+	}
+	writeTestFile(t, filepath.Join(home, ".claude", "projects", "p", "a.jsonl"),
+		line("m1", "claude-opus-5-5", 1_000_000, 1_000_000)+line("m2", "claude-sonnet-5-5", 1_000_000, 0)+line("m3", "sonnet", 7, 0))
+	s.scan(time.Time{})
+	_, total := s.summarize(usageFilter{})
+	if want := 8 + 2.50; total.Cost < want-1e-9 || total.Cost > want+1e-9 || total.Unpriced != 7 {
+		t.Errorf("cost = %v, unpriced = %d, want %v, 7", total.Cost, total.Unpriced, want)
+	}
+	models := s.modelsByProject(time.Time{})["game"]
+	if len(models) != 3 || models[0].Total != 1_000_000 {
+		t.Errorf("models = %+v", models)
+	}
+}
+
+func TestOverlayDetailEntriesListModelsWithinTheCap(t *testing.T) {
+	named := func(name, model string) usageRow {
+		return usageRow{usageTotal: usageTotal{Project: name, Model: model}}
+	}
+	rows := []usageRow{named("a", ""), named("b", ""), named("c", "")}
+	models := map[string][]usageRow{"a": {named("a", "x"), named("a", "y")}, "b": {named("b", "x")}}
+	got := overlayDetailEntries(rows, models)
+	if len(got) != 5 || got[0].Models != 2 || !got[1].Sub || got[2].Model != "y" || got[3].Project != "b" || got[3].Sub {
+		t.Errorf("entries = %+v", got)
+	}
+
+	var many []usageRow
+	lots := map[string][]usageRow{}
+	for i := range overlayMaxRows {
+		name := fmt.Sprint("p", i)
+		many = append(many, named(name, ""))
+		lots[name] = []usageRow{named(name, "x"), named(name, "y")}
+	}
+	got = overlayDetailEntries(many, lots)
+	projects := 0
+	for _, entry := range got {
+		if !entry.Sub {
+			projects++
+		}
+	}
+	if len(got) > overlayMaxLines || projects != overlayMaxRows {
+		t.Errorf("%d lines, %d projects", len(got), projects)
+	}
+}
+
+func TestCompactTokensUsesBForBillions(t *testing.T) {
+	if got := compactTokens(1_500_000_000); got != "1.5B" {
+		t.Errorf("compactTokens = %q", got)
 	}
 }
