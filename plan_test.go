@@ -218,3 +218,25 @@ func TestPlanArchiveKeepsCommit(t *testing.T) {
 		t.Fatalf("header written %d times", n)
 	}
 }
+
+func TestKitArchiveHeaderMatchesArchiveCommand(t *testing.T) {
+	data, err := kitFS.ReadFile(kitBase + "/PLAN-ARCHIVE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != archiveHeaderLine+"\n"+archiveSeparatorLine+"\n" {
+		t.Fatalf("kit PLAN-ARCHIVE.md must be the empty archive table:\n%s", data)
+	}
+	// wj plan archive appends rows under the kit header without writing another one.
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "PLAN-ARCHIVE.md"), string(data))
+	writeTestFile(t, filepath.Join(root, "PLAN.md"), strings.Replace(goodPlan, "| DOING |", "| DONE |", 1))
+	var out bytes.Buffer
+	if err := runPlanIn([]string{"archive", "T-01", "-commit", "abc1234"}, &out, root); err != nil {
+		t.Fatal(err)
+	}
+	archive := readText(t, filepath.Join(root, "PLAN-ARCHIVE.md"))
+	if strings.Count(archive, archiveHeaderLine) != 1 || !strings.HasPrefix(strings.Split(archive, "\n")[2], "| T-01 |") {
+		t.Fatalf("row must follow the kit header directly:\n%s", archive)
+	}
+}
