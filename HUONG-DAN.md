@@ -77,8 +77,6 @@ wj version
 
 `apps install` bo qua app da phat hien tren may. `apps update` moi yeu cau cap nhat.
 `update` chi cap nhat tool wj, sau do mo lai tool.
-Neu dang dung v1.1.0, chay lai lenh CMD o dau huong dan mot lan de len v1.2.0;
-tu ban nay tro di co lenh update tich hop.
 
 | ID | Windows | macOS / Linux |
 | --- | --- | --- |
