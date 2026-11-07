@@ -395,7 +395,7 @@ Ket qua mau:
   chung chi CA (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`) cho **tien trinh do**;
   khong sua settings Claude/Codex, khong sua bien moi truong cua may.
 - Lan dau `proxy start` mitmproxy tu tao CA trong `~/.mitmproxy`.
-- `proxy start -web` mo mitmweb (xem tung request tai http://127.0.0.1:8081).
+- `proxy start` chay ca do token lan web mitmweb (xem tung request tai http://127.0.0.1:8081); `-no-web` chi do token, `-web-port N` doi cong web.
 - Doi cong: `proxy start -port 9000` va `proxy run -port 9000 claude`.
 - Dung mitmproxy rieng cua ban (may khac/cong khac): bat no kem addon
   `~/.wj/proxy/usage_meter.py` (tao ra sau lan `proxy start` dau tien),

@@ -22,6 +22,9 @@ type connectionProfile struct {
 	Credential string   `json:"credential,omitempty"`
 	Header     string   `json:"auth_header,omitempty"`
 	Models     []string `json:"models,omitempty"`
+	// NeutralHeaders makes Claude Code send a neutral User-Agent and x-app instead
+	// of its own identity, for gateways that reject requests identified as Claude Code.
+	NeutralHeaders bool `json:"neutral_headers,omitempty"`
 }
 
 func canonicalAuth(auth string) string {

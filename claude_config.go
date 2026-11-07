@@ -75,6 +75,7 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 		delete(root, key)
 	}
 	root["model"] = "opus"
+	var notes []string
 	switch p.Auth {
 	case "oauth":
 		env["CLAUDE_CODE_OAUTH_TOKEN"] = p.Credential
@@ -95,7 +96,18 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 		// Claude Code asks the gateway for its model list at every start but keeps
 		// only Claude ids; the others go into the /model picker from the saved list.
 		env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
-		setClaudePicker(root, p.Models)
+		if p.NeutralHeaders {
+			env["ANTHROPIC_CUSTOM_HEADERS"] = neutralHeaders
+			notes = append(notes, "đã bật header trung tính (ANTHROPIC_CUSTOM_HEADERS): gateway sẽ không thấy danh tính Claude Code. Tắt: wj -use-profile TÊN -neutral-headers=false")
+		}
+		// Claude first: other models join /model only if they work through /v1/messages.
+		added, dropped := setClaudePicker(root, p, p.Models, !dry)
+		if added > 0 {
+			notes = append(notes, fmt.Sprintf("thêm %d model khác vào /model (đã thử chạy được)", added))
+		}
+		if dropped > 0 {
+			notes = append(notes, fmt.Sprintf("bỏ %d model khác vì không chạy qua Claude Code (xem: wj models test)", dropped))
+		}
 		model := pick(p.Models, []string{"opus"}, []string{"review"})
 		if model == "" {
 			model = pick(p.Models, []string{"sonnet"}, []string{"review"})
@@ -105,6 +117,13 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 		}
 		if model == "" && len(p.Models) > 0 {
 			model = p.Models[0]
+		}
+		if model != "" && !dry {
+			var note string
+			model, note = workingClaudeDefault(p, model, env, pickerModelIDs(root))
+			if note != "" {
+				notes = append(notes, note)
+			}
 		}
 		if model != "" {
 			root["model"] = model
@@ -121,7 +140,39 @@ func applyClaude(home string, p connectionProfile, dry bool) (string, error) {
 	if err := writeFile(path, string(data)+"\n", dry); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s (%s; giữ nguyên hooks, plugin và cài đặt khác)", path, p.Auth), nil
+	line := fmt.Sprintf("%s (%s; giữ nguyên hooks, plugin và cài đặt khác)", path, p.Auth)
+	for _, note := range notes {
+		line += "\n  - " + note
+	}
+	return line, nil
+}
+
+// workingClaudeDefault keeps Claude Code usable: it returns the preferred
+// default model if the gateway answers it, otherwise the first of the mapped
+// Sonnet/Opus/Haiku models that does, otherwise the first other model that was
+// already verified (extras), so the app still starts. When nothing answers
+// (offline, wrong key) it keeps the preferred one and says so, because the
+// user's choice of gateway still stands.
+func workingClaudeDefault(p connectionProfile, preferred string, env map[string]any, extras []string) (string, string) {
+	candidates := []string{preferred}
+	for _, key := range []string{"ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"} {
+		if id, _ := env[key].(string); id != "" && !contains(candidates, id) {
+			candidates = append(candidates, id)
+		}
+	}
+	working := verifyClaudeModels(p, candidates)
+	for _, id := range candidates {
+		if contains(working, id) {
+			if id == preferred {
+				return preferred, ""
+			}
+			return id, fmt.Sprintf("model mặc định %s không trả lời qua gateway, đổi sang %s", preferred, id)
+		}
+	}
+	if len(extras) > 0 {
+		return extras[0], fmt.Sprintf("không model Claude nào chạy được với Claude Code qua gateway này; dùng %s (đã thử chạy được). Gateway có thể đang lỗi, chạy lại sau để thử Claude", extras[0])
+	}
+	return preferred, "CHƯA kiểm chứng được model nào qua gateway (kiểm tra mạng, key, tên model); vẫn ghi cấu hình"
 }
 
 // newestModel returns the latest gateway ID of a family: namespaced gateway IDs
