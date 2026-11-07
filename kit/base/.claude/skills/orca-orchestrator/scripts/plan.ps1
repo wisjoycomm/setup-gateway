@@ -14,26 +14,62 @@ Prints
     (every Depends gone from PLAN.md, Scope not clashing with DOING/DONE tasks or with each other)
   - WAITING: TODO tasks that can't start yet, with the reason
   - FORMAT: lines that break the table format (fix them; `wj plan check` explains each)
+
+Archive (PLAN-ARCHIVE.md, same columns + Commit + Archived), without reading the whole file:
+  plan.ps1 -Archive                last 20 archived rows: id, commit, date, task
+  plan.ps1 -Archive -Last 50       more rows
+  plan.ps1 -Archive -Find T-12     the archived row(s) for one ID, or rows whose Task/Notes contain the text
 #>
 [CmdletBinding()]
-param([string]$Plan = 'PLAN.md')
+param(
+    [string]$Plan = 'PLAN.md',
+    [switch]$Archive,
+    [int]$Last = 20,
+    [string]$Find = ''
+)
 
 $ErrorActionPreference = 'Stop'
 
 $root = & git rev-parse --show-toplevel 2>$null
 if ($LASTEXITCODE -eq 0 -and $root) { Set-Location -LiteralPath $root }
-if (-not (Test-Path -LiteralPath $Plan)) { Write-Output "ERROR: $Plan not found"; exit 2 }
-
-$cols = 'ID', 'Task', 'Pri', 'SP', 'Status', 'Agent', 'Depends', 'Scope', 'Verify', 'Notes', 'Session'
-$lines = @(Get-Content -LiteralPath $Plan -Encoding utf8)
-$tasks = [System.Collections.Generic.List[object]]::new()
-$format = [System.Collections.Generic.List[string]]::new()
 
 function Split-Row([string]$l) {
     $t = $l.Trim()
     if (-not ($t.StartsWith('|') -and $t.EndsWith('|')) -or $t.Length -lt 2) { return $null }
     return @($t.Substring(1, $t.Length - 2).Split('|') | ForEach-Object { $_.Trim() })
 }
+
+if ($Archive) {
+    $file = 'PLAN-ARCHIVE.md'
+    if (-not (Test-Path -LiteralPath $file)) { Write-Output "ERROR: $file not found"; exit 2 }
+    # Only table rows with every column count; older free text above the table is skipped.
+    $rows = [System.Collections.Generic.List[object]]::new()
+    $n = 0
+    foreach ($l in [System.IO.File]::ReadLines((Resolve-Path -LiteralPath $file).Path)) {
+        $n++
+        $c = Split-Row $l
+        if (-not $c -or $c.Count -ne 13 -or $c[0] -notmatch '^[A-Za-z]+-\d+$') { continue }
+        $rows.Add([pscustomobject]@{ Line = $n; Id = $c[0]; Title = $c[1]; Status = $c[4]; Notes = $c[9]; Commit = $c[11]; Date = $c[12] })
+    }
+    if ($Find) {
+        $hits = @($rows | Where-Object { $_.Id -ieq $Find -or $_.Title -like "*$Find*" -or $_.Notes -like "*$Find*" })
+    } else {
+        $hits = @($rows | Select-Object -Last $Last)
+    }
+    Write-Output ("ARCHIVE: {0} rows{1}" -f $rows.Count, $(if ($Find) { ", matching '$Find': $($hits.Count)" } else { ", last $($hits.Count)" }))
+    foreach ($r in $hits) {
+        $title = if ($r.Title.Length -gt 70) { $r.Title.Substring(0, 67) + '...' } else { $r.Title }
+        Write-Output ('  {0,-5} {1,-6} {2,-8} {3,-10} {4,-10} {5}' -f $r.Line, $r.Id, $r.Status, $r.Commit, $r.Date, $title)
+    }
+    exit 0
+}
+
+if (-not (Test-Path -LiteralPath $Plan)) { Write-Output "ERROR: $Plan not found"; exit 2 }
+
+$cols = 'ID', 'Task', 'Pri', 'SP', 'Status', 'Agent', 'Depends', 'Scope', 'Verify', 'Notes', 'Session'
+$lines = @(Get-Content -LiteralPath $Plan -Encoding utf8)
+$tasks = [System.Collections.Generic.List[object]]::new()
+$format = [System.Collections.Generic.List[string]]::new()
 
 if ($lines.Count -lt 2 -or ((Split-Row $lines[0]) -join '|') -ne ($cols -join '|')) {
     $format.Add("line 1: header must be | $($cols -join ' | ') |  (old checkbox format? run: wj plan convert)")

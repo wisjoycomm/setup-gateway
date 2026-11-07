@@ -52,6 +52,13 @@ pwsh -NoProfile -NonInteractive -File .agents/skills/orca-orchestrator/scripts/p
 It prints the next ID, the active tasks with their line numbers, READY (highest priority first, with launch
 commands), WAITING and FORMAT problems. Fix every FORMAT line before anything else (`wj plan check` explains each).
 
+For finished tasks, query PLAN-ARCHIVE.md with the same script instead of reading it:
+
+```
+pwsh -NoProfile -NonInteractive -File .agents/skills/orca-orchestrator/scripts/plan.ps1 -Archive             # last 20
+pwsh -NoProfile -NonInteractive -File .agents/skills/orca-orchestrator/scripts/plan.ps1 -Archive -Find T-12  # one ID or text
+```
+
 ## Editing PLAN.md
 - Change a task with one patch that replaces exactly that task's line (print it with `rg -n -F '| T-01 |' PLAN.md`).
   Never rewrite the table.
