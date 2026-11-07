@@ -31,14 +31,78 @@ func claudePickerRows(ids []string) []any {
 	return rows
 }
 
-func setClaudePicker(root map[string]any, ids []string) int {
+// verifyClaudeModels is the "Claude first" check. It is a variable so tests can
+// run without a network.
+var verifyClaudeModels = probeClaudeModels
+
+// probeClaudeModels returns the ids that answer a streaming, tool-using
+// /v1/messages request sent with Claude Code's identity headers.
+func probeClaudeModels(conn connectionProfile, ids []string) []string {
+	passed := make([]bool, len(ids))
+	limit := make(chan struct{}, 8)
+	var wait sync.WaitGroup
+	for i, id := range ids {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			limit <- struct{}{}
+			defer func() { <-limit }()
+			passed[i] = probeModel(conn, "/messages", probeMessages, id) == "OK"
+		}()
+	}
+	wait.Wait()
+	var kept []string
+	for i, id := range ids {
+		if passed[i] {
+			kept = append(kept, id)
+		}
+	}
+	return kept
+}
+
+// setClaudePicker adds the non-Claude gateway models to /model. With verify on,
+// only those that really work through /v1/messages are added, so a model that
+// would break Claude Code never shows up. It returns how many rows were added
+// and how many were dropped.
+func setClaudePicker(root map[string]any, conn connectionProfile, ids []string, verify bool) (added, dropped int) {
 	rows := claudePickerRows(ids)
+	if verify && len(rows) > 0 {
+		extra := make([]string, len(rows))
+		for i, row := range rows {
+			extra[i], _ = row.(map[string]any)["model"].(string)
+		}
+		working := map[string]bool{}
+		for _, id := range verifyClaudeModels(conn, extra) {
+			working[id] = true
+		}
+		var kept []any
+		for i, row := range rows {
+			if working[extra[i]] {
+				kept = append(kept, row)
+			}
+		}
+		dropped = len(rows) - len(kept)
+		rows = kept
+	}
 	if len(rows) == 0 {
 		delete(root, "modelPicker")
-		return 0
+		return 0, dropped
 	}
 	root["modelPicker"] = map[string]any{"options": rows}
-	return len(rows)
+	return len(rows), dropped
+}
+
+// pickerModelIDs lists the models setClaudePicker put in /model.
+func pickerModelIDs(root map[string]any) []string {
+	picker, _ := root["modelPicker"].(map[string]any)
+	rows, _ := picker["options"].([]any)
+	var ids []string
+	for _, row := range rows {
+		if id, _ := row.(map[string]any)["model"].(string); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // modelTarget is an app already connected to a gateway. Each app's own stored
@@ -86,8 +150,9 @@ func claudeTarget(home string) *modelTarget {
 	if !ok {
 		return nil
 	}
+	conn.NeutralHeaders = env["ANTHROPIC_CUSTOM_HEADERS"] == neutralHeaders
 	return &modelTarget{"claude", conn, func(ids []string) (string, error) {
-		added := setClaudePicker(root, ids)
+		added, dropped := setClaudePicker(root, conn, ids, true)
 		data, err := json.MarshalIndent(root, "", "  ")
 		if err != nil {
 			return "", err
@@ -95,7 +160,11 @@ func claudeTarget(home string) *modelTarget {
 		if err = writeFile(path, string(data)+"\n", false); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%d model; Claude tự hiện model Claude, thêm %d model khác vào /model", len(ids), added), nil
+		line := fmt.Sprintf("%d model; Claude tự hiện model Claude, thêm %d model khác đã thử chạy được vào /model", len(ids), added)
+		if dropped > 0 {
+			line += fmt.Sprintf("; bỏ %d model không chạy qua Claude Code", dropped)
+		}
+		return line, nil
 	}}
 }
 
@@ -202,6 +271,24 @@ func runModels(args []string, input io.Reader, out io.Writer, home string) error
 	return nil
 }
 
+// Identity Claude Code sends (captured from v2.1.319). On 2026-11-06 the adnx
+// gateway answered 400 "reasoning_effort: Extra inputs are not permitted" for
+// every Claude model when either User-Agent or x-app carried this identity, and
+// 200 for the same body sent by a plain client.
+const (
+	claudeCodeUserAgent = "claude-cli/2.1.319 (external, sdk-cli)"
+	claudeCodeBeta      = "claude-code-20250219,interleaved-thinking-2025-05-14,context-management-2025-06-27,effort-2025-11-24"
+)
+
+// Opt-in workaround (-neutral-headers): Claude Code is told, through
+// ANTHROPIC_CUSTOM_HEADERS, to send these instead of its own identity. They name
+// this tool honestly and do not imitate another product.
+const (
+	neutralUserAgent = "wj-gateway-client/1"
+	neutralApp       = "wj"
+	neutralHeaders   = "User-Agent: " + neutralUserAgent + "\nx-app: " + neutralApp
+)
+
 const (
 	probeMessages = `{"model":%q,"max_tokens":16,"stream":true,"messages":[{"role":"user","content":"Reply with: ok"}],"tools":[{"name":"noop","description":"Does nothing.","input_schema":{"type":"object","properties":{}}}]}`
 	probeResponse = `{"model":%q,"max_output_tokens":16,"stream":true,"input":"Reply with: ok","tools":[{"type":"function","name":"noop","description":"Does nothing.","parameters":{"type":"object","properties":{}}}]}`
@@ -210,9 +297,24 @@ const (
 // probeModel sends the same shape of request the app sends: streaming, with a
 // tool. Only a verdict comes back; a body can echo credentials and is never shown.
 func probeModel(conn connectionProfile, path, bodyFormat, model string) string {
-	req, err := http.NewRequest(http.MethodPost, conn.BaseURL+path, strings.NewReader(fmt.Sprintf(bodyFormat, model)))
+	target := conn.BaseURL + path
+	if path == "/messages" {
+		target += "?beta=true"
+	}
+	req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(fmt.Sprintf(bodyFormat, model)))
 	if err != nil {
 		return "lỗi"
+	}
+	if path == "/messages" {
+		// A gateway can treat Claude Code differently from a plain client, so the
+		// probe must look like Claude Code or its verdict means nothing.
+		agent, app := claudeCodeUserAgent, "cli"
+		if conn.NeutralHeaders {
+			agent, app = neutralUserAgent, neutralApp
+		}
+		req.Header.Set("User-Agent", agent)
+		req.Header.Set("x-app", app)
+		req.Header.Set("anthropic-beta", claudeCodeBeta)
 	}
 	if conn.Header == "x-api-key" {
 		req.Header.Set("x-api-key", conn.Credential)

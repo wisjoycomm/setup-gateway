@@ -214,23 +214,18 @@ try {
     if ($TaskId) {
         if ($TaskId -notmatch '^[A-Za-z]+-\d+$') { Skip "bad TaskId '$TaskId' (expected e.g. T-01)" }
         if (-not (Test-Path -LiteralPath $Plan)) { Skip "$Plan not found - commit it before launching workers" }
-        $lines = @(Get-Content -LiteralPath $Plan -Encoding utf8)
-        $taskLine = '^\s*-\s*\[.\]\s*\*\*' + [regex]::Escape($TaskId) + '\*\*'
-        $start = -1
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match $taskLine) { $start = $i; break }
+        # PLAN.md is one table: | ID | Task | Pri | SP | Status | Agent | Depends | Scope | Verify | Notes | Session |
+        $row = $null
+        foreach ($l in @(Get-Content -LiteralPath $Plan -Encoding utf8)) {
+            $t = $l.Trim()
+            if (-not ($t.StartsWith('|') -and $t.EndsWith('|'))) { continue }
+            $c = @($t.Substring(1, $t.Length - 2).Split('|') | ForEach-Object { $_.Trim() })
+            if ($c.Count -eq 11 -and $c[0] -eq $TaskId) { $row = $c; break }
         }
-        if ($start -lt 0) { Skip "task $TaskId not found in $Plan" }
-        for ($i = $start + 1; $i -lt $lines.Count; $i++) {
-            $l = $lines[$i]
-            if ($l -match '^\s*-\s*\[.\]\s*\*\*' -or $l -match '^#') { break }
-            if ($l -match '^\s*-\s*\*\*Scope\*\*\s*:(.*)$') {
-                $scope = @([regex]::Matches($Matches[1], '`([^`]+)`') | ForEach-Object { $_.Groups[1].Value.Trim() })
-            } elseif ($l -match '^\s*-\s*\*\*Verify\*\*\s*:(.*)$') {
-                $vm = [regex]::Match($Matches[1], '`([^`]+)`')
-                if ($vm.Success) { $verify = $vm.Groups[1].Value.Trim() }
-            }
-        }
+        if (-not $row) { Skip "task $TaskId not found in $Plan (one table row per task; old format? run: wj plan convert)" }
+        $scope = @([regex]::Matches($row[7], '`([^`]+)`') | ForEach-Object { $_.Groups[1].Value.Trim() })
+        $vm = [regex]::Match($row[8], '`([^`]+)`')
+        if ($vm.Success) { $verify = $vm.Groups[1].Value.Trim() }
     }
 
     # 2. Changed files (tracked + staged + untracked) and scope check

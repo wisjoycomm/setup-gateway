@@ -1,15 +1,19 @@
 <#
 plan.ps1 - compact view of PLAN.md for the orchestrator, so it never has to read the whole file.
 
+PLAN.md is one Markdown table and nothing else:
+| ID | Task | Pri | SP | Status | Agent | Depends | Scope | Verify | Notes | Session |
+
 Usage (from the main repo folder):
   pwsh -NoProfile -NonInteractive -File .agents/skills/orca-orchestrator/scripts/plan.ps1
 
 Prints
-  - the Next ID and one line per running / done-unmerged / blocked task, with its line number
-  - counts per status
-  - READY: tasks that can start now, as launch commands for their agent
-    (status [ ], every Depends done or archived, Scope not clashing with running/unmerged tasks or with each other)
-  - WAITING: todo tasks that can't start yet, with the reason
+  - the next free ID (from PLAN.md and PLAN-ARCHIVE.md), counts per status
+  - ACTIVE: every task that is not TODO, with its line number and session
+  - READY: TODO tasks that can start now, highest priority first, as launch commands
+    (every Depends gone from PLAN.md, Scope not clashing with DOING/DONE tasks or with each other)
+  - WAITING: TODO tasks that can't start yet, with the reason
+  - FORMAT: lines that break the table format (fix them; `wj plan check` explains each)
 #>
 [CmdletBinding()]
 param([string]$Plan = 'PLAN.md')
@@ -20,35 +24,41 @@ $root = & git rev-parse --show-toplevel 2>$null
 if ($LASTEXITCODE -eq 0 -and $root) { Set-Location -LiteralPath $root }
 if (-not (Test-Path -LiteralPath $Plan)) { Write-Output "ERROR: $Plan not found"; exit 2 }
 
+$cols = 'ID', 'Task', 'Pri', 'SP', 'Status', 'Agent', 'Depends', 'Scope', 'Verify', 'Notes', 'Session'
 $lines = @(Get-Content -LiteralPath $Plan -Encoding utf8)
-$nextId = ''
 $tasks = [System.Collections.Generic.List[object]]::new()
-$cur = $null
-$inComment = $false
+$format = [System.Collections.Generic.List[string]]::new()
 
-for ($i = 0; $i -lt $lines.Count; $i++) {
-    $l = $lines[$i]
-    if ($l -match '<!--') { $inComment = $true }
-    if ($inComment) { if ($l -match '-->') { $inComment = $false }; continue }
-    if (-not $nextId -and $l -match '^\s*Next ID:\s*(\S+)') { $nextId = $Matches[1]; continue }
-    if ($l -match '^\s*-\s*\[(.)\]\s*\*\*([A-Za-z]+-\d+)\*\*\s*:?\s*(.*)$') {
-        $cur = [pscustomobject]@{
-            Id = $Matches[2]; St = $Matches[1]; Title = $Matches[3].Trim(); Line = $i + 1
-            Agent = 'claude'; Scope = @(); Depends = @()
-        }
-        $tasks.Add($cur)
-        continue
-    }
-    if ($l -match '^#') { $cur = $null; continue }
-    if (-not $cur) { continue }
-    if ($l -match '^\s*-\s*\*\*Agent\*\*\s*:\s*(\S*)') {
-        if ($Matches[1]) { $cur.Agent = $Matches[1].ToLower() }
-    } elseif ($l -match '^\s*-\s*\*\*Scope\*\*\s*:(.*)$') {
-        $cur.Scope = @([regex]::Matches($Matches[1], '`([^`]+)`') | ForEach-Object { $_.Groups[1].Value.Trim() })
-    } elseif ($l -match '^\s*-\s*\*\*Depends\*\*\s*:(.*)$') {
-        $cur.Depends = @([regex]::Matches($Matches[1], '[A-Za-z]+-\d+') | ForEach-Object { $_.Value })
-    }
+function Split-Row([string]$l) {
+    $t = $l.Trim()
+    if (-not ($t.StartsWith('|') -and $t.EndsWith('|')) -or $t.Length -lt 2) { return $null }
+    return @($t.Substring(1, $t.Length - 2).Split('|') | ForEach-Object { $_.Trim() })
 }
+
+if ($lines.Count -lt 2 -or ((Split-Row $lines[0]) -join '|') -ne ($cols -join '|')) {
+    $format.Add("line 1: header must be | $($cols -join ' | ') |  (old checkbox format? run: wj plan convert)")
+}
+for ($i = 2; $i -lt $lines.Count; $i++) {
+    if (-not $lines[$i].Trim()) { continue }
+    $c = Split-Row $lines[$i]
+    if (-not $c) { $format.Add("line $($i + 1): text outside the table"); continue }
+    if ($c.Count -ne $cols.Count) { $format.Add("line $($i + 1): $($c.Count) cells, need $($cols.Count)"); continue }
+    $tasks.Add([pscustomobject]@{
+        Line = $i + 1; Id = $c[0]; Title = $c[1]; Pri = $c[2]; SP = $c[3]; St = $c[4].ToUpper()
+        Agent = if ($c[5]) { $c[5].ToLower() } else { 'claude' }
+        Depends = @([regex]::Matches($c[6], '[A-Za-z]+-\d+') | ForEach-Object { $_.Value })
+        Scope = @([regex]::Matches($c[7], '`([^`]+)`') | ForEach-Object { $_.Groups[1].Value.Trim() })
+        Session = $c[10]
+    })
+}
+
+# Next ID: highest T-number in PLAN.md and PLAN-ARCHIVE.md, plus one.
+$max = 0
+$ids = @($tasks | ForEach-Object { $_.Id })
+if (Test-Path -LiteralPath 'PLAN-ARCHIVE.md') {
+    $ids += @(Select-String -LiteralPath 'PLAN-ARCHIVE.md' -Pattern '\bT-\d+\b' -AllMatches | ForEach-Object { $_.Matches.Value })
+}
+foreach ($id in $ids) { if ($id -match '^T-(\d+)$' -and [int]$Matches[1] -gt $max) { $max = [int]$Matches[1] } }
 
 # Scope overlap: compare the fixed part of each path (before any wildcard).
 function Get-Prefix([string]$s) {
@@ -64,41 +74,41 @@ function Find-Clash([string[]]$a, [string[]]$b) {
         foreach ($y in $b) {
             $py = Get-Prefix $y
             if ($px -eq '' -or $py -eq '') { return "$x ~ $y" }
-            if ($px -eq $py -or $px.StartsWith("$py/", 'OrdinalIgnoreCase') -or $py.StartsWith("$px/", 'OrdinalIgnoreCase') -or $px -ieq $py) {
+            if ($px -ieq $py -or $px.StartsWith("$py/", 'OrdinalIgnoreCase') -or $py.StartsWith("$px/", 'OrdinalIgnoreCase')) {
                 return "$x ~ $y"
             }
         }
     }
     return $null
 }
+function Short([string]$s, [int]$n) { if ($s.Length -gt $n) { $s.Substring(0, $n - 3) + '...' } else { $s } }
 
 $byId = @{}
 foreach ($t in $tasks) { $byId[$t.Id] = $t }
 
-function Short([string]$s, [int]$n) { if ($s.Length -gt $n) { $s.Substring(0, $n - 3) + '...' } else { $s } }
+Write-Output ('NEXT ID: T-{0:D2}' -f ($max + 1))
+$count = @{}
+foreach ($t in $tasks) { $count[$t.St] = 1 + [int]$count[$t.St] }
+Write-Output ("COUNTS: todo {0}, doing {1}, done {2}, blocked {3}, partial {4}" -f [int]$count['TODO'], [int]$count['DOING'], [int]$count['DONE'], [int]$count['BLOCKED'], [int]$count['PARTIAL'])
 
-Write-Output "NEXT ID: $nextId"
-$active = @($tasks | Where-Object { $_.St -ne ' ' })
+$active = @($tasks | Where-Object { $_.St -ne 'TODO' })
 if ($active.Count) {
-    Write-Output 'ACTIVE (line, id, status, agent, title):'
+    Write-Output 'ACTIVE (line, id, status, session, task):'
     foreach ($t in $active) {
-        Write-Output ('  {0,-4} {1,-6} [{2}] {3,-7} {4}' -f $t.Line, $t.Id, $t.St, $t.Agent, (Short $t.Title 60))
+        Write-Output ('  {0,-4} {1,-6} {2,-8} {3,-14} {4}' -f $t.Line, $t.Id, $t.St, $t.Session, (Short $t.Title 60))
     }
 }
-$count = @{ ' ' = 0; '~' = 0; 'x' = 0; '!' = 0 }
-foreach ($t in $tasks) { if ($count.ContainsKey($t.St)) { $count[$t.St]++ } }
-Write-Output ("COUNTS: todo {0}, running {1}, done-unmerged {2}, blocked {3}" -f $count[' '], $count['~'], $count['x'], $count['!'])
 
-# Tasks whose files are taken: running, or done but not merged/archived yet.
-$busy = @($tasks | Where-Object { $_.St -eq '~' -or $_.St -eq 'x' })
+# Files of DOING tasks, and of DONE tasks not merged + archived yet, are taken.
+$busy = @($tasks | Where-Object { $_.St -eq 'DOING' -or $_.St -eq 'DONE' })
 $ready = [System.Collections.Generic.List[object]]::new()
 $waiting = [System.Collections.Generic.List[string]]::new()
 
-foreach ($t in ($tasks | Where-Object { $_.St -eq ' ' })) {
-    $open = @($t.Depends | Where-Object { $byId.ContainsKey($_) -and $byId[$_].St -ne 'x' })
-    $unmerged = @($t.Depends | Where-Object { $byId.ContainsKey($_) -and $byId[$_].St -eq 'x' })
-    if ($open.Count) { $waiting.Add("$($t.Id) needs $($open -join ',')"); continue }
-    if ($unmerged.Count) { $waiting.Add("$($t.Id) needs $($unmerged -join ',') merged + archived"); continue }
+$priRank = @{ P0 = 0; P1 = 1; P2 = 2; P3 = 3 }
+$todo = @($tasks | Where-Object { $_.St -eq 'TODO' } | Sort-Object @{ Expression = { if ($priRank.ContainsKey($_.Pri)) { $priRank[$_.Pri] } else { 9 } } }, Line)
+foreach ($t in $todo) {
+    $open = @($t.Depends | Where-Object { $byId.ContainsKey($_) } | ForEach-Object { "$_($($byId[$_].St))" })
+    if ($open.Count) { $waiting.Add("$($t.Id) needs $($open -join ',') merged + archived"); continue }
     $reason = $null
     foreach ($o in @($busy) + @($ready)) {
         $c = Find-Clash $t.Scope $o.Scope
@@ -108,13 +118,14 @@ foreach ($t in ($tasks | Where-Object { $_.St -eq ' ' })) {
     $ready.Add($t)
 }
 
-Write-Output 'READY:'
+Write-Output 'READY (highest priority first):'
 if ($ready.Count -eq 0) { Write-Output '  (none)' }
 foreach ($t in $ready) {
     $cmd = if ($t.Agent -eq 'codex') { "`$orca-stateless-worker $($t.Id)" } else { "/orca-stateless-worker $($t.Id)" }
-    Write-Output ('  {0,-30} # line {1}, {2}: {3}' -f $cmd, $t.Line, $t.Agent, (Short $t.Title 50))
+    Write-Output ('  {0,-30} # line {1}, {2} {3} SP{4}: {5}' -f $cmd, $t.Line, $t.Agent, $t.Pri, $t.SP, (Short $t.Title 50))
 }
 if ($waiting.Count) {
     Write-Output 'WAITING:'
     $waiting | ForEach-Object { Write-Output "  $_" }
 }
+foreach ($f in $format) { Write-Output "FORMAT: $f" }

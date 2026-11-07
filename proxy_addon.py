@@ -6,6 +6,13 @@ API keys) are never written.
 
 Understands Anthropic Messages, OpenAI Responses and Chat Completions, both
 plain JSON and streaming (SSE), plus Responses over WebSocket (Codex).
+
+Tool search repair: some gateways rename every tool upstream (Monitor -> Monitor_ide)
+but leave `tool_reference` blocks alone, so Anthropic answers 400 "Tool reference 'X'
+not found in available tools". Claude Code then drops tool search and sends every tool
+schema on every call (~280k tokens with large MCP servers). After the first such 400
+from a host, this addon appends the suffix to tool_reference names sent to that host,
+so Claude Code's own retry succeeds. Hosts that never send that error are not touched.
 """
 
 import base64
@@ -13,6 +20,7 @@ import binascii
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from urllib.parse import unquote
@@ -20,6 +28,29 @@ from urllib.parse import unquote
 from mitmproxy import ctx, http
 
 _lock = threading.Lock()
+
+# Hosts that answered "Tool reference ... not found"; their tool_reference names get the suffix.
+_ref_hosts = set()
+_REF_ERROR = re.compile(rb"Tool reference '[^']*' not found in available tools")
+# Both key orders; edits only the name so the rest of the body stays byte-identical.
+_REF_TYPE_FIRST = re.compile(r'("type"\s*:\s*"tool_reference"\s*,\s*"tool_name"\s*:\s*")((?:[^"\\]|\\.)*)(")')
+_REF_NAME_FIRST = re.compile(r'("tool_name"\s*:\s*")((?:[^"\\]|\\.)*)("\s*,\s*"type"\s*:\s*"tool_reference")')
+
+def _suffix_refs(text, suffix):
+    """Returns text with suffix added to every tool_reference name lacking it, and the count."""
+    count = 0
+
+    def add(match):
+        nonlocal count
+        name = match.group(2)
+        if name.endswith(suffix):
+            return match.group(0)
+        count += 1
+        return match.group(1) + name + suffix + match.group(3)
+
+    text = _REF_TYPE_FIRST.sub(add, text)
+    text = _REF_NAME_FIRST.sub(add, text)
+    return text, count
 
 
 def _metered(path):
@@ -95,6 +126,8 @@ def _project(flow):
 class UsageMeter:
     def load(self, loader):
         loader.add_option("usage_log", str, "", "JSONL file that receives token usage records")
+        loader.add_option("tool_ref_suffix", str, "_ide",
+                          "suffix added to tool_reference names for hosts that reject them; empty = off")
 
     def http_connect(self, flow: http.HTTPFlow):
         project = _project(flow)
@@ -113,9 +146,16 @@ class UsageMeter:
             return
         # Plain bytes let the stream parser read events; usage is all we inspect.
         flow.request.headers["accept-encoding"] = "identity"
+        text = flow.request.get_text(strict=False) or ""
+        suffix = ctx.options.tool_ref_suffix
+        if suffix and flow.request.pretty_host in _ref_hosts and "tool_reference" in text:
+            text, fixed = _suffix_refs(text, suffix)
+            if fixed:
+                flow.request.set_text(text)
+                logging.info("[tool-ref] %s: added %s to %d tool_reference name(s)", flow.request.pretty_host, suffix, fixed)
         model = None
         try:
-            body = json.loads(flow.request.get_text(strict=False) or "{}")
+            body = json.loads(text or "{}")
             if isinstance(body, dict) and isinstance(body.get("model"), str):
                 model = body["model"]
         except ValueError:
@@ -151,6 +191,12 @@ class UsageMeter:
             return
         if not state["streamed"] and flow.response is not None and flow.response.content:
             _absorb_bytes(state, flow.response.content)
+            host = flow.request.pretty_host
+            if (flow.response.status_code == 400 and ctx.options.tool_ref_suffix and host not in _ref_hosts
+                    and _REF_ERROR.search(flow.response.content)):
+                _ref_hosts.add(host)
+                logging.warning("[tool-ref] %s rejects tool_reference names; adding %s from now on",
+                                host, ctx.options.tool_ref_suffix)
         self._write(flow, state, flow.response.status_code if flow.response else 0)
 
     def error(self, flow: http.HTTPFlow):

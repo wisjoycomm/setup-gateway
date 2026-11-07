@@ -17,6 +17,33 @@ Input for this turn: $ARGUMENTS
 - If it says branches are merged: do step 4, then step 2.
 - If it is empty: do step 2.
 
+## PLAN.md format (strict)
+PLAN.md is ONE Markdown table and nothing else: no title, no comments, no lists, no text before or after it.
+Scripts read it line by line, so any other text breaks them.
+
+```
+| ID | Task | Pri | SP | Status | Agent | Depends | Scope | Verify | Notes | Session |
+|---|---|---|---|---|---|---|---|---|---|---|
+| T-01 | Discount code in cart total | P1 | 3 | DOING | claude | - | `src/lib/cart.ts`, `src/lib/cart.test.ts` | - | - | wt-cart |
+```
+
+| Column | Allowed values |
+|---|---|
+| ID | `T-01`, `T-02`... Never reuse or renumber an ID. |
+| Task | Short title, max 120 characters. |
+| Pri | `P0` urgent, `P1` high, `P2` normal, `P3` later |
+| SP | Story points, agile scale: `1` `2` `3` `5` `8` `13`, or `?` not estimated. 8+ means split it. |
+| Status | `TODO` `DOING` `DONE` (not merged yet) `BLOCKED` `PARTIAL` |
+| Agent | `claude` `codex` `agy` |
+| Depends | IDs separated by commas, or `-` |
+| Scope | Paths in backticks separated by commas, or `-` |
+| Verify | One non-interactive command in backticks, or `-` to auto-detect |
+| Notes | Max 100 characters, or `-` |
+| Session | The Orca worktree/session working on it, or `-` |
+
+No cell may contain `|` or a line break. Use `-` for an empty cell.
+Backlog work is a normal row with Status `TODO` and Pri `P3`.
+
 ## Reading PLAN.md
 Never read the whole PLAN.md or PLAN-ARCHIVE.md. Get the state with:
 
@@ -24,68 +51,60 @@ Never read the whole PLAN.md or PLAN-ARCHIVE.md. Get the state with:
 pwsh -NoProfile -NonInteractive -File .claude/skills/orca-orchestrator/scripts/plan.ps1
 ```
 
-It prints the Next ID, the active tasks with their line numbers, and READY / WAITING lists with ready-made launch commands.
-To change a task, Read only its block (offset = its line number, limit 7) and Edit that.
+It prints the next ID, the active tasks with their line numbers, READY (highest priority first, with launch
+commands), WAITING and FORMAT problems. Fix every FORMAT line before anything else (`wj plan check` explains each).
+
+## Editing PLAN.md
+- Change a task with one Edit whose old_string is that task's whole line (Read it with offset = its line number, limit 1).
+  Never rewrite the table.
+- Add a task as a new line at the end of the table, using the next ID.
+- Remove a task by deleting its line.
 
 ## 1. Plan
-- Turn the goal into tasks. Write at most ~15 full tasks into the Queue; put the rest in `## Backlog`, one line each.
-  When the Queue runs low, turn the next Backlog lines into tasks.
-- Each task: `**Agent**`, `**Scope**`, `**Verify**`, `**Depends**`, `**Result**`, as in the existing tasks.
-  Agent is `claude`, `codex` or `agy`; use `claude` unless I say otherwise.
-- Keep each task small (1-3 files). Tasks that can run at the same time must not share files or folders in Scope.
-- Verify is one non-interactive command, or empty for auto-detect.
+- Turn the goal into tasks. Each task is one row. Keep each task small (1-3 files, SP 1-5).
+- Set Pri from what I asked for first; set SP from size and risk.
+- Tasks that can run at the same time must not share files or folders in Scope.
 - Find the right files with Grep/Glob before writing Scope. Don't read whole files.
-- IDs come from the `Next ID` line; bump it after adding tasks. Never reuse an ID.
 
 ## 2. Launch
-- Run plan.ps1. For each READY task, change `[ ]` to `[~]`.
+- Run plan.ps1. For each READY task you launch, set Status `DOING` and Session to the worktree name.
 - Commit PLAN.md (plus AGENTS.md, CLAUDE.md, .claude/ and .agents/ if they changed) so new worktrees see them.
 - Give me the READY launch commands exactly as plan.ps1 printed them (without the `#` comments).
 
 ## 3. Record
-- Put each handover line into that task's Result. Set `[x]` for PASS, `[!]` for BLOCKED.
+- For each handover line: PASS -> Status `DONE`; BLOCKED -> `BLOCKED`; partly done -> `PARTIAL`.
+  Put the SUMMARY (cut to 100 characters) in Notes. Keep Session.
 - For each BLOCKED task, suggest one fix: adjust Scope or Verify, split the task, or add a dependency.
-- Remind me to merge the PASS branches in Orca.
+- Remind me to merge the DONE branches in Orca.
 
 ## 4. Archive after merge
-- When I say branches are merged: for each of those `[x]` tasks, append its Result line to the end of PLAN-ARCHIVE.md
-  with a shell command (create the file if missing, never read it), then delete the task's block from PLAN.md.
+- When I say branches are merged, archive those `DONE`/`PARTIAL` rows with the merge commit:
+
+  ```
+  wj plan archive T-01 T-02              # finds each task's newest commit naming its ID in git log
+  wj plan archive T-01 -commit 9fb158c   # one merge commit for all listed tasks
+  wj plan archive T-01=9fb158c T-02=3f38ef1
+  ```
+
+  It appends each row to PLAN-ARCHIVE.md (a table: the PLAN.md columns plus `Commit` and `Archived` date) and
+  deletes the row from PLAN.md. If I gave commit hashes, pass them; a `-` in Commit means none was found.
+  Never read PLAN-ARCHIVE.md.
 - Commit PLAN.md and PLAN-ARCHIVE.md, then do step 2.
 
 ## Rules
 - Only you edit PLAN.md. Don't edit source files. Don't push.
-- Keep replies short: a task table plus the next commands, nothing else. Follow the examples below exactly.
+- Keep replies short: the changed rows plus the next commands, nothing else.
 
-## Reply examples
-
-After planning or launching:
+## Reply example
 
 ```
-| ID   | St  | Agent  | Task                                   |
-|------|-----|--------|----------------------------------------|
-| T-01 | [~] | claude | Discount code in cart total            |
-| T-02 | [~] | codex  | Rate-limit login route                 |
-| T-03 | [ ] | claude | Discount line in checkout (needs T-01) |
+| ID   | Pri | SP | Status | Agent  | Task                        | Session  |
+|------|-----|----|--------|--------|-----------------------------|----------|
+| T-01 | P1  | 3  | DOING  | claude | Discount code in cart total | wt-cart  |
+| T-02 | P0  | 2  | DOING  | codex  | Rate-limit login route      | wt-login |
+| T-03 | P2  | 3  | TODO   | claude | Discount line in checkout   | -        |
 
 Committed PLAN.md. Start:
 /orca-stateless-worker T-01
 $orca-stateless-worker T-02
-```
-
-After recording handovers:
-
-```
-| ID   | St  | Agent  | Task                                   |
-|------|-----|--------|----------------------------------------|
-| T-01 | [x] | claude | Discount code in cart total            |
-| T-02 | [!] | codex  | Rate-limit login route                 |
-
-T-02 fix: test needs a Redis mock outside Scope -> add `tests/mocks/` to Scope, relaunch.
-Merge T-01 in Orca, then tell me "merged T-01".
-```
-
-The Result field gets the worker's handover line as-is:
-
-```
-  - **Result**: TASK: T-01 | STATUS: PASS | FILES: src/lib/cart.ts, src/lib/cart.test.ts | SUMMARY: Added discount codes to total()
 ```

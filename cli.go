@@ -37,6 +37,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 	skip := flags.Bool("skip-check", false, "không gọi /v1/models (khi đó nhập -models)")
 	install := flags.Bool("install-claude", false, "tự cài Claude Code nếu máy chưa có")
 	noLogin := flags.Bool("no-login", false, "đăng nhập web: chỉ dọn cấu hình, chưa mở trình duyệt")
+	neutral := flags.Bool("neutral-headers", false, "gateway: Claude Code gửi header trung tính thay vì danh tính Claude Code (đường vòng khi gateway từ chối Claude Code); tắt bằng -neutral-headers=false")
 	launch := flags.Bool("run", false, "mở Claude Code ngay sau khi xong")
 	dry := flags.Bool("dry-run", false, "chạy thử: không ghi file, không gọi mạng, không cài, không đăng nhập")
 	if err := flags.Parse(args); err != nil {
@@ -48,6 +49,8 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 	if flags.NArg() != 0 {
 		return errors.New("có tham số không hiểu; xem: wj help claude")
 	}
+	neutralSet := false
+	flags.Visit(func(f *flag.Flag) { neutralSet = neutralSet || f.Name == "neutral-headers" })
 	var err error
 	if *list {
 		return listProfiles(home, out)
@@ -68,6 +71,9 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 		p, err = loadProfile(home, *use)
 		if err != nil {
 			return err
+		}
+		if neutralSet {
+			p.NeutralHeaders = *neutral
 		}
 		if *only == "" {
 			*only = "claude"
@@ -137,7 +143,7 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 				return err
 			}
 		}
-		p = connectionProfile{Auth: *auth, BaseURL: *base, Credential: strings.TrimSpace(*key), Header: *header, Models: splitList(*models)}
+		p = connectionProfile{Auth: *auth, BaseURL: *base, Credential: strings.TrimSpace(*key), Header: *header, Models: splitList(*models), NeutralHeaders: *neutral}
 	}
 	targets := splitList(*only)
 	if err := validateTargets(targets, p, *profile != "" || *use != ""); err != nil {
@@ -148,6 +154,15 @@ func runCLIWithHome(args []string, input io.Reader, out io.Writer, home string) 
 	}
 	if err := p.validate(); err != nil {
 		return err
+	}
+	if p.NeutralHeaders && p.Auth != "gateway" {
+		return errors.New("-neutral-headers chỉ dùng với kết nối Gateway")
+	}
+	if *use != "" && neutralSet && *skip && !*dry {
+		// The normal path saves the profile after fetching models; with -skip-check it does not.
+		if err := saveProfile(home, *use, p, false); err != nil {
+			return err
+		}
 	}
 	if wizard && len(targets) == 1 && targets[0] == "claude" {
 		*profile = prompt(reader, out, "Lưu kết nối này với tên gì để đổi lại sau? (vd adnx, work; Enter = không lưu, 0 = quay lại)")
