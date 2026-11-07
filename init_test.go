@@ -41,7 +41,7 @@ func TestInitFreshProjectInstallsKitAndChosenRules(t *testing.T) {
 	root := t.TempDir()
 	runInitIn(t, root, "-type", "unity")
 	for _, rel := range []string{
-		"CLAUDE.md", "PLAN.md", ".claude/settings.json",
+		"CLAUDE.md", "PLAN.md", "PLAN-ARCHIVE.md", ".claude/settings.json",
 		".claude/skills/orca-orchestrator/SKILL.md",
 		".claude/skills/orca-stateless-worker/scripts/fast_verify.ps1",
 		".agents/skills/orca-orchestrator/scripts/plan.ps1",

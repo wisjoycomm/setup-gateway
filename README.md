@@ -81,7 +81,7 @@ wj init -dry-run         preview, write nothing
 
 Run it anywhere inside a project; it works from the Git root. It installs the shared
 agent rules and any job rules (`unity`, `web`, `go`, `python`) into `AGENTS.md`, plus
-`CLAUDE.md`, `PLAN.md`, the Orca skills in `.claude/` and `.agents/`, Claude
+`CLAUDE.md`, `PLAN.md`, an empty `PLAN-ARCHIVE.md` table, the Orca skills in `.claude/` and `.agents/`, Claude
 permissions and `.gitignore` entries. To add a job, add a folder under `kit/stacks/`
 and an entry in `initStacksList`.
 

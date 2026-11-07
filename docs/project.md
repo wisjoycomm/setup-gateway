@@ -11,7 +11,7 @@ wj init -dry-run           xem trước
 
 Job có sẵn: `unity`, `web`, `go`, `python`.
 
-Tool thêm rule chung, rule theo job, `PLAN.md`, quyền cho `.claude/settings.json`,
+Tool thêm rule chung, rule theo job, `PLAN.md`, `PLAN-ARCHIVE.md` (bảng trống), quyền cho `.claude/settings.json`,
 `.gitignore` và skill Orca. Chạy lại nhiều lần được: file đã có không bị ghi đè, còn rule
 trong `AGENTS.md` nằm giữa hai dấu `<!-- wj:begin -->` nên phần tự viết được giữ nguyên.
 
