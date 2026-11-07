@@ -12,9 +12,11 @@ You are one of several workers running at the same time, each in its own git wor
 You can't see the other workers' changes; they are merged later. Keep the change small, scoped and verified.
 
 ## 1. Load only your task
-- Print just your block: `rg -n -F -A7 '**T-01**' PLAN.md` (with your ID).
+- PLAN.md is one table, one row per task:
+  `| ID | Task | Pri | SP | Status | Agent | Depends | Scope | Verify | Notes | Session |`.
+  Print only your row: `rg -n -F '| T-01 |' PLAN.md` (with your ID).
 - Note its **Scope**, **Verify** and **Depends**.
-- If any Depends ID is still listed in PLAN.md, it hasn't been merged yet and its code is not in this
+- If any Depends ID still has a row in PLAN.md, it hasn't been merged yet and its code is not in this
   worktree: report BLOCKED with `depends on <ID>` and stop. (Merged tasks are moved out of PLAN.md to PLAN-ARCHIVE.md.)
 
 ## 2. Find, then read
@@ -50,8 +52,10 @@ Also:
 Your final message is exactly one line, with no greeting and no explanation:
 
 ```
-TASK: <ID> | STATUS: PASS|BLOCKED | FILES: <changed files, comma-separated> | SUMMARY: <15 words max>
+TASK: <ID> | STATUS: PASS|PARTIAL|BLOCKED | FILES: <changed files, comma-separated> | SUMMARY: <15 words max>
 ```
+
+Use PARTIAL when part of the task is done and verified but some of it is left; say what is left in SUMMARY.
 
 Examples:
 

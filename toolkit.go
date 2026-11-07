@@ -36,8 +36,14 @@ func runApp(args []string, input io.Reader, out io.Writer) error {
 		return runToolkit(args[1:], input, out)
 	case "proxy":
 		return runProxy(args[1:], input, out)
+	case "direct":
+		return runDirectCommand(args[1:], out)
 	case "check":
 		return runCheck(args[1:], out)
+	case "doctor":
+		return runDoctor(args[1:], input, out)
+	case "plan":
+		return runPlan(args[1:], out)
 	case "init":
 		return runInit(args[1:], input, out)
 	case "usage":
@@ -159,6 +165,7 @@ func agentConfigMenu(input io.Reader, out io.Writer) error {
 		{"Lấy lại danh sách model từ gateway (wj models)", func() error { return runApp([]string{"models"}, input, out) }},
 		{"Thử model nào dùng được, tốn vài token (wj models test)", func() error { return runApp([]string{"models", "test"}, input, out) }},
 		{"Kiểm tra cấu hình các agent có khớp không (wj check)", func() error { return runCheck(nil, out) }},
+		{"Tự kiểm tra máy, báo và sửa vấn đề (wj doctor)", func() error { return runDoctor(nil, input, out) }},
 		{"Đo token qua mitmproxy, cho app khác Claude/Codex", func() error { return proxyMenu(input, out) }},
 	}, input, out)
 }

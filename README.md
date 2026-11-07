@@ -91,6 +91,22 @@ is refreshed, and shared rules are not added to an `AGENTS.md` that wj did not
 create. `.claude/settings.json` and `.gitignore` only gain entries, and a rule you
 already set is left as it is. The Orca skill scripts need `pwsh`.
 
+`PLAN.md` is a single Markdown table and nothing else, one task per row:
+`| ID | Task | Pri | SP | Status | Agent | Depends | Scope | Verify | Notes | Session |`
+(Pri `P0`-`P3`, SP agile points `1 2 3 5 8 13 ?`, Status `TODO DOING DONE BLOCKED PARTIAL`).
+`wj plan` lists ready tasks by priority, `wj plan check` validates the format and
+`wj plan convert` turns an old checkbox plan into the table and refreshes the
+project's Orca skills (the old files are backed up). See [docs/project.md](docs/project.md).
+
+## Doctor
+
+`wj doctor` checks the machine and offers to fix what it finds: Claude sessions that
+lost tool search mid-session (gateway `tool_reference` bug), an outdated or stopped
+metering proxy, user-scope MCP servers that only one or two projects use, and old
+or broken `PLAN.md` files. `-dry-run` only reports, `-yes` fixes everything, and
+`-ai` asks the configured Claude gateway for advice on the report (only the report
+lines are sent). `wj proxy bg|stop|restart` manages a background proxy.
+
 ## Compare agents
 
 `wj check` shows, for Claude, Codex, Antigravity, Cursor and OpenCode, whether
@@ -375,7 +391,7 @@ wj proxy run claude         # also codex, opencode or any command
 
 # Step by step: a long-running proxy shared by several terminals.
 wj proxy setup              # install mitmproxy and create its CA once
-wj proxy start              # terminal 1, keep open (-web for mitmweb, -port N)
+wj proxy start              # terminal 1, keep open (token metering + web UI at http://127.0.0.1:8081; -no-web, -web-port N, -port N)
 wj proxy run claude         # terminal 2; reuses the running proxy
 
 wj proxy usage              # whole machine, all apps, last 24h; -since 168h, -all
@@ -405,6 +421,11 @@ JSON line per model call to `~/.wj/proxy/usage.jsonl`: time, project,
 client, host, model, HTTP status and input/output/cache token counts from the response
 `usage` field (Anthropic Messages, OpenAI Responses and Chat Completions, JSON or
 SSE, plus Responses over WebSocket). Prompts, responses and headers are not logged.
+The addon also repairs Claude Code tool search for gateways that rename tools
+upstream (`Monitor` -> `Monitor_ide`) but not `tool_reference` blocks: after the
+first `400 Tool reference '...' not found` from a host it appends the suffix to
+those names, so tool search stays on instead of falling back to every tool schema
+on every call. Set `--set tool_ref_suffix=` (empty) to disable. See [docs/model.md](docs/model.md).
 `proxy run` sets `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` and `CODEX_CA_CERTIFICATE`
 for that child process only; client configuration and the user environment are
 not changed. To use your own mitmproxy instance, load

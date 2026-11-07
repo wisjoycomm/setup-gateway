@@ -211,6 +211,13 @@ func TestUsageByProjectAndFilters(t *testing.T) {
 	if !bytes.Contains(proxyAddon, []byte("def http_connect")) || !bytes.Contains(proxyAddon, []byte(`"project"`)) {
 		t.Fatal("addon does not tag projects")
 	}
+	// Gateways that rename tools upstream break Claude Code tool search unless
+	// tool_reference names get the same suffix (see docs/model.md).
+	for _, want := range []string{`"tool_ref_suffix", str, "_ide"`, "not found in available tools", "def _suffix_refs"} {
+		if !bytes.Contains(proxyAddon, []byte(want)) {
+			t.Fatalf("addon lost tool_reference repair: %s", want)
+		}
+	}
 }
 
 func TestProxyRunTagsProject(t *testing.T) {

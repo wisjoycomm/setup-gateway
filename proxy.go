@@ -61,8 +61,11 @@ const proxyHelp = `Đo lưu lượng / token qua mitmproxy (chạy tại máy, k
 
   Lệnh khác:
     proxy status               kiểm tra mitmproxy, chứng chỉ, cổng, file log
+    proxy bg                   chạy proxy nền (không cần giữ cửa sổ); tắt: proxy stop
+    proxy restart              tắt rồi bật lại proxy nền (nạp addon mới)
     -yes                       (setup/start/run) tự cài mitmproxy, không hỏi
-    proxy start -web           giao diện web xem từng request (http://127.0.0.1:8081)
+    proxy start                chạy proxy đếm token VÀ web xem từng request (http://127.0.0.1:8081)
+    proxy start -no-web        chỉ đếm token, không mở web; -web-port N đổi cổng web
     proxy start -port 9000     đổi cổng (mặc định 8877; nhớ dùng cùng -port khi run)
     proxy run -proxy http://IP:PORT -ca FILE.pem codex
                                dùng mitmproxy riêng của bạn (máy khác / cổng khác)
@@ -100,6 +103,12 @@ func runProxy(args []string, input io.Reader, out io.Writer) error {
 		return proxyProject(args[1:], input, out, home)
 	case "status":
 		return proxyStatus(out, home)
+	case "bg", "background":
+		return ensureProxyRunning(home, out)
+	case "stop":
+		return stopProxy(home, out)
+	case "restart":
+		return restartProxy(home, out)
 	}
 	return fmt.Errorf("không hiểu lệnh proxy %q; xem: wj proxy help", args[0])
 }
@@ -125,7 +134,9 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 	flags := flag.NewFlagSet("proxy start", flag.ContinueOnError)
 	flags.SetOutput(out)
 	port := flags.Int("port", defaultProxyPort, "cổng proxy trên 127.0.0.1")
-	web := flags.Bool("web", false, "mở mitmweb (xem từng request trên trình duyệt) thay vì mitmdump")
+	noWeb := flags.Bool("no-web", false, "chỉ chạy mitmdump (đếm token), không mở giao diện web")
+	webPort := flags.Int("web-port", defaultWebPort, "cổng giao diện web trên 127.0.0.1")
+	flags.Bool("web", true, "giữ để tương thích: web đã bật sẵn, tắt bằng -no-web")
 	dry := flags.Bool("dry-run", false, "chỉ in lệnh sẽ chạy")
 	assumeYes := flags.Bool("yes", false, "tự cài mitmproxy nếu thiếu, không hỏi")
 	if err := flags.Parse(args); err != nil {
@@ -134,17 +145,23 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 		}
 		return err
 	}
-	if flags.NArg() != 0 || *port < 1 || *port > 65535 {
-		return errors.New("cách dùng: wj proxy start [-port 8877] [-web] [-yes] [-dry-run]")
+	if flags.NArg() != 0 || *port < 1 || *port > 65535 || *webPort < 1 || *webPort > 65535 || (!*noWeb && *webPort == *port) {
+		return errors.New("cách dùng: wj proxy start [-port 8877] [-web-port 8081] [-no-web] [-yes] [-dry-run]")
 	}
-	tool := "mitmdump"
-	if *web {
-		tool = "mitmweb"
+	tool := "mitmweb"
+	if *noWeb {
+		tool = "mitmdump"
 	}
 	fmt.Fprintf(out, "Proxy: http://127.0.0.1:%d   Log: %s\n", *port, proxyLogPath(home))
+	if tool == "mitmweb" {
+		fmt.Fprintf(out, "Web:   http://127.0.0.1:%d   (mitmweb sẽ in link có ?token= ở dưới nếu cần)\n", *webPort)
+	}
 	if *dry {
-		fmt.Fprintln(out, "Dry run:", strings.Join(mitmCommand(tool, home, *port)[1:], " "))
+		fmt.Fprintln(out, "Dry run:", strings.Join(mitmCommand(tool, home, *port, *webPort)[1:], " "))
 		return nil
+	}
+	if tool == "mitmweb" && portOpen(*webPort) {
+		return fmt.Errorf("cổng web %d đang bận; dùng -web-port khác hoặc -no-web", *webPort)
 	}
 	if portOpen(*port) {
 		return fmt.Errorf("cổng %d đang bận (có thể proxy đã chạy rồi); dùng -port khác hoặc xem: wj proxy status", *port)
@@ -156,7 +173,7 @@ func proxyStart(args []string, input io.Reader, out io.Writer, home string) erro
 	if err := writeAddon(home); err != nil {
 		return err
 	}
-	command := mitmCommand(bin, home, *port)
+	command := mitmCommand(bin, home, *port, *webPort)
 	portFlag := ""
 	if *port != defaultProxyPort {
 		portFlag = " -port " + strconv.Itoa(*port)
@@ -284,9 +301,17 @@ func currentProject() string {
 	return name
 }
 
-func mitmCommand(bin, home string, port int) []string {
-	return []string{bin, "--listen-host", "127.0.0.1", "-p", strconv.Itoa(port), "-s", filepath.Join(proxyDir(home), "usage_meter.py"),
+const defaultWebPort = 8081
+
+// mitmCommand builds the mitmproxy command line. The metering addon is the same
+// for mitmdump and mitmweb; only mitmweb gets the web flags.
+func mitmCommand(bin, home string, port, webPort int) []string {
+	cmd := []string{bin, "--listen-host", "127.0.0.1", "-p", strconv.Itoa(port), "-s", filepath.Join(proxyDir(home), "usage_meter.py"),
 		"--set", "usage_log=" + proxyLogPath(home), "--set", "flow_detail=0"}
+	if strings.Contains(strings.ToLower(filepath.Base(bin)), "mitmweb") {
+		cmd = append(cmd, "--web-host", "127.0.0.1", "--web-port", strconv.Itoa(webPort), "--set", "web_open_browser=false")
+	}
+	return cmd
 }
 
 func writeAddon(home string) error {
@@ -355,7 +380,7 @@ func startBackgroundProxy(home string, port int, assumeYes bool, input io.Reader
 	if err != nil {
 		return nil, err
 	}
-	command := mitmCommand(bin, home, port)
+	command := mitmCommand(bin, home, port, defaultWebPort)
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
@@ -641,7 +666,17 @@ func proxyStatus(out io.Writer, home string) error {
 	if conn != nil {
 		conn.Close()
 	}
-	check(err == nil, fmt.Sprintf("proxy đang chạy ở 127.0.0.1:%d", defaultProxyPort), fmt.Sprintf("proxy chưa chạy ở cổng %d -> wj proxy start", defaultProxyPort))
+	proxyOn := err == nil
+	check(proxyOn, fmt.Sprintf("proxy đang chạy ở 127.0.0.1:%d", defaultProxyPort), fmt.Sprintf("proxy chưa chạy ở cổng %d -> wj proxy start", defaultProxyPort))
+	webOn := portOpen(defaultWebPort)
+	webBad := fmt.Sprintf("web chưa bật ở cổng %d -> wj proxy start", defaultWebPort)
+	if proxyOn {
+		webBad = "proxy đang chạy nhưng KHÔNG có web (mitmdump) -> tắt proxy rồi chạy lại wj proxy start"
+	}
+	check(webOn, fmt.Sprintf("web đang chạy: http://127.0.0.1:%d", defaultWebPort), webBad)
+	if webOn && !proxyOn {
+		fmt.Fprintf(out, "  [!] cổng %d đang mở nhưng proxy cổng %d thì không: có thể proxy chạy bằng -port khác, hoặc cổng web bị chương trình khác dùng\n", defaultWebPort, defaultProxyPort)
+	}
 	info, err := os.Stat(proxyLogPath(home))
 	check(err == nil, fmt.Sprintf("log: %s (%d KB)", proxyLogPath(home), sizeKB(info)), "chưa có log -> mở app bằng proxy run claude")
 	return nil

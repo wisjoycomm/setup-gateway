@@ -35,8 +35,11 @@ LỆNH HAY DÙNG
   wj usage                       bảng token Claude + Codex trong 24 giờ
   wj models                      lấy lại danh sách model từ gateway
   wj proxy run claude            mở Claude qua mitmproxy (tự cài, tự bật)
+  wj direct                      Claude gọi thẳng gateway, bỏ proxy đo token
   wj init                        setup ban đầu cho project đang đứng
   wj check                       so cấu hình giữa các agent (chỉ đọc)
+  wj doctor                      tự kiểm tra máy, báo vấn đề, sửa (-dry-run chỉ báo, -ai nhờ AI gợi ý)
+  wj plan                        PLAN.md một bảng: task sẵn sàng, check format, convert kiểu cũ
   wj update                      cập nhật chính tool này
   wj version                     xem phiên bản
 
@@ -70,6 +73,9 @@ Tham số khác:
   -skip-check -models ID1,ID2   gateway không có /v1/models: tự nhập tên model
   -key-stdin            đọc key từ stdin (cho script), không hiện ra màn hình
   -no-login             (đăng nhập web) chỉ dọn cấu hình, chưa mở trình duyệt
+  -neutral-headers      (gateway) Claude Code gửi header trung tính thay vì danh tính Claude Code.
+                        Chỉ dùng khi gateway từ chối Claude Code (lỗi 400 reasoning_effort).
+                        Được lưu trong profile; tắt bằng -neutral-headers=false
   -dry-run              xem trước, không ghi file, không gọi mạng
 
 Model qua gateway: tool lấy danh sách model của gateway, gán Opus/Sonnet/Haiku/Fable
@@ -252,6 +258,10 @@ func printHelp(args []string, input io.Reader, out io.Writer) error {
 		fmt.Fprintln(out, helpInit)
 	case "check":
 		fmt.Fprintln(out, helpCheck)
+	case "doctor":
+		fmt.Fprintln(out, doctorHelp)
+	case "plan":
+		fmt.Fprintln(out, planHelp)
 	case "words", "terms", "tu":
 		fmt.Fprintln(out, helpWords)
 	case "flags", "all":
